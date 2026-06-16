@@ -1,0 +1,23 @@
+# --- Python / venv ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- experiment artifacts (kept local, referenced by path in progress.md) ---
+runs/
+logs/
+wandb/
+data/
+checkpoints/
+*.pt
+*.ckpt
+*.npz
+*.mp4
+*.gif
+setup.log
+
+# --- os ---
+.DS_Store
