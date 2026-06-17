@@ -93,14 +93,19 @@ class Trainer:
 
     # --- value/reward targets -----------------------------------------------------
     @torch.no_grad()
-    def _value_target(self, next_obs: torch.Tensor, reward: torch.Tensor, done: torch.Tensor):
-        """TD target r + gamma * (1-done) * min_ensemble q_target(z',a') with the target
-        value net; a' is a 1-iter MPPI action at the next state (greedy-ish bootstrap)."""
+    def _value_target(
+        self,
+        next_obs: torch.Tensor,
+        next_action: torch.Tensor,
+        reward: torch.Tensor,
+        done: torch.Tensor,
+    ) -> torch.Tensor:
+        """SARSA TD target r + gamma * (1-done) * min_subset q_target(z', a') with the
+        target value net. z' = encode(next_obs) (no grad) and a' = next_action — the action
+        ACTUALLY taken next in the sub-trajectory (not a zero-action proxy), so the value head
+        learns the on-policy return rather than the value of doing nothing."""
         z_next = self.model.encode(next_obs)  # SimNorm latent (no grad)
-        # cheap greedy action proxy: mean action 0 (the heads condition on it); the planner's
-        # own action would re-enter the loop, so use a fixed zero action for the bootstrap.
-        a_next = torch.zeros(next_obs.shape[0], self.model.cfg.act_dim, device=self.device)
-        v_logits = self.model.target_value_head.logits(z_next, a_next)  # (num_q,B,bins)
+        v_logits = self.model.target_value_head.logits(z_next, next_action)  # (num_q,B,bins)
         v = self.model.target_value_head.to_scalar(v_logits)  # (num_q, B)
         k = min(self.mppi_cfg.min_q_subset, v.shape[0])
         v_min = v.topk(k, dim=0, largest=False).values.amin(0)  # (B,)
@@ -112,16 +117,19 @@ class Trainer:
         cfg, mcfg = self.cfg, self.model.cfg
         h = mcfg.horizon
         traj = self.buffer.sample_subtraj(cfg.batch_size, h)
-        obs_seq, action_seq = traj["obs_seq"], traj["action_seq"]
-        consistency = self.model.consistency_loss(obs_seq, action_seq)
+        obs_seq, action_seq, reward_seq = traj["obs_seq"], traj["action_seq"], traj["reward"]
 
-        # reward/value grounding on the first step of the same window
-        z0 = self.model.encode(obs_seq[0])
-        r_tgt = traj["reward"][0]
-        next_obs0 = obs_seq[1]
+        # one open-loop rollout shared by consistency + reward grounding
+        latents = self.model.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
+        consistency = self.model.consistency_loss_from(obs_seq, action_seq, latents)
+
+        # reward grounding over the FULL rollout: r(o_{t+k}, a_{t+k}) for k=0..H-1
+        r_loss = self.model.reward_grounding_loss(action_seq, reward_seq, latents)
+
+        # value grounding at step 0 with a SARSA target using the REAL next action a_{t+1}
         done0 = torch.zeros(cfg.batch_size, dtype=torch.bool, device=self.device)
-        v_tgt = self._value_target(next_obs0, r_tgt, done0)
-        r_loss, v_loss = self.model.reward_value_losses(z0, action_seq[0], r_tgt, v_tgt)
+        v_tgt = self._value_target(obs_seq[1], action_seq[1], reward_seq[0], done0)
+        v_loss = self.model.value_loss(latents[0], action_seq[0], v_tgt)
 
         loss = mcfg.consistency_coef * consistency + mcfg.rv_coef * (r_loss + v_loss)
 

@@ -82,6 +82,40 @@ class WorldModel(nn.Module):
         return out
 
     # --- losses -------------------------------------------------------------------
+    def rollout_latents(
+        self, obs_seq: torch.Tensor, action_seq: torch.Tensor
+    ) -> list[torch.Tensor]:
+        """Online rollout latents shared by consistency + reward grounding.
+
+        Returns [z_0, z_hat_1, .., z_hat_H] (length H+1) as SimNorm latents:
+        z_0 = encode(obs_seq[0]) (online, grad) and z_hat_k = the open-loop predicted
+        latent of o_{t+k} for k=1..H. Index alignment: out[k] is the latent for o_{t+k}.
+        Rolls the predictor ONCE; consistency and reward grounding consume the same list.
+        """
+        z0_pre = self.encode_pre(obs_seq[0])
+        z0 = self.encoder.simnorm(z0_pre)
+        return [z0, *self.rollout(z0_pre, action_seq)]
+
+    def consistency_loss_from(
+        self,
+        obs_seq: torch.Tensor,
+        action_seq: torch.Tensor,
+        latents: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """Consistency loss reusing pre-rolled latents (shared with reward grounding).
+
+        latents: [z_0, z_hat_1, .., z_hat_H] from rollout_latents. Uses latents[k] (= the
+        predicted latent of o_{t+k}) for k=1..H; latents[0] is the encoding of o_t and is not
+        scored against a target here. L = sum_{k=1..H} rho^k * smooth_l1(latents[k], f_xi(o_{t+k})).
+        """
+        cfg = self.cfg
+        h = action_seq.shape[0]
+        loss = obs_seq.new_zeros(())
+        for k in range(1, h + 1):
+            target = self.encode_target(obs_seq[k])  # stop-grad inside
+            loss = loss + (cfg.rho**k) * F.smooth_l1_loss(latents[k], target)
+        return loss
+
     def consistency_loss(
         self, obs_seq: torch.Tensor, action_seq: torch.Tensor
     ) -> torch.Tensor:
@@ -91,15 +125,43 @@ class WorldModel(nn.Module):
         L = sum_{k=1..H} rho^k * smooth_l1(z_hat_{t+k}, stopgrad f_xi(o_{t+k})).
         z_hat rolled open-loop from the online encoding of o_t.
         """
-        cfg = self.cfg
+        latents = self.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
+        return self.consistency_loss_from(obs_seq, action_seq, latents)
+
+    def reward_grounding_loss(
+        self,
+        action_seq: torch.Tensor,
+        reward_seq: torch.Tensor,
+        latents: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """Two-hot reward cross-entropy summed over the FULL open-loop rollout.
+
+        action_seq: (H, batch, act_dim). reward_seq: (H, batch) = r(o_{t+k}, a_{t+k}).
+        latents: [z_0, z_hat_1, .., z_hat_H] from rollout_latents (length H+1) — z_0 is the
+        online encoding (grad through encoder); z_hat_k>=1 are predicted (grad through the
+        predictor + encoder). For each step k=0..H-1 the reward head predicts reward_seq[k]
+        from (latents[k], action_seq[k]); the gradient therefore reaches EVERY rolled latent
+        (the anti-collapse grounding signal), not just step 0. Returns the mean over k.
+        """
         h = action_seq.shape[0]
-        z0_pre = self.encode_pre(obs_seq[0])
-        preds = self.rollout(z0_pre, action_seq)
-        loss = obs_seq.new_zeros(())
-        for k in range(1, h + 1):
-            target = self.encode_target(obs_seq[k])  # stop-grad inside
-            loss = loss + (cfg.rho**k) * F.smooth_l1_loss(preds[k - 1], target)
-        return loss
+        loss = action_seq.new_zeros(())
+        for k in range(h):
+            r_logits = self.reward_head.logits(latents[k], action_seq[k])[0]
+            r_label = self.reward_head.twohot_encode(symlog(reward_seq[k]))
+            loss = loss + -(r_label * F.log_softmax(r_logits, dim=-1)).sum(-1).mean()
+        return loss / h
+
+    def value_loss(
+        self, z0: torch.Tensor, action0: torch.Tensor, value_target: torch.Tensor
+    ) -> torch.Tensor:
+        """Two-hot value cross-entropy over the full ensemble at step 0.
+
+        z0, action0: (batch, *). value_target: (batch,) — the SARSA TD target. Grounds the
+        value head at (z_0, a_0); the target is computed grad-free by the trainer.
+        """
+        v_logits = self.value_head.logits(z0, action0)  # (num_q, batch, bins)
+        v_label = self.value_head.twohot_encode(symlog(value_target))
+        return -(v_label.unsqueeze(0) * F.log_softmax(v_logits, dim=-1)).sum(-1).mean()
 
     def reward_value_losses(
         self,

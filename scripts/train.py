@@ -107,6 +107,7 @@ def main() -> None:
     p.add_argument("--eval-episodes", type=int, default=2)
     p.add_argument("--updates-per-step", type=int, default=1)
     p.add_argument("--action-repeat", type=int, default=2)
+    p.add_argument("--latent-dim", type=int, default=0, help="0 = auto (256 if obs>8 else 128)")
     p.add_argument("--device", default="cuda")
     p.add_argument("--outdir", default="runs/train")
     a = p.parse_args()
@@ -117,7 +118,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     env = DMCEnv(a.task, seed=a.seed, action_repeat=a.action_repeat)
-    latent_dim = 256 if env.obs_dim > 8 else 128
+    latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
     mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim)
     wm = WorldModel(mcfg)
     tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every)
