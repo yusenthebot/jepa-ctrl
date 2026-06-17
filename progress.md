@@ -33,6 +33,7 @@ random baseline real-verified in the live simulator. **No model yet** (that is r
 |------|------|-----------|-------|-------------|-------|
 | R1 | cheetah-run | random | 0,1,2 | 6.7 (±2.9 ci95) | floor; TD-MPC2 anchor ~772@500k |
 | R1 | reacher-easy | random | 0,1,2 | 39.6 | per-seed [54.3, 0.0, 64.3] — random occasionally hits target |
+| R2 | cheetah-run | JEPA-MPPI 100k | 0 | 138 (1 seed) | PARTIAL control (7→138 over 100k, 18min/100k). Latent under-collapsed but recovering: obs_corr 0.09→0.34, PR 2.2→6.9, rank_frac 0.13→0.23. cross-seed PENDING. |
 
 (Baselines only; these are the "did nothing" floor the learned controller must beat.)
 
@@ -58,7 +59,7 @@ TD-MPC2-grounded). ~1M params, all-MLP, no decoder.
 
 ## Frontier ladder (## Frontier — ambition horizon)
 
-Current ceiling: **harness only, no learning yet.** Escalation in *kind*:
+Current ceiling: **JEPA-MPPI partially controls cheetah-run (return 138 @100k, 1 seed); representation under-collapsed but recovering.** RUNG 0 NOT yet met (weak control + not cross-seed). Escalation in *kind*:
 0. **RUNG 0 (floor):** reward-head MPPI controls cheetah-run + reacher cross-seed, visually
    confirmed; run the **pure-consistency vs +reward-grounding ablation** (the thesis).
 1. RUNG 1: harder dynamics same machinery — walker-walk → walker-run → finger-turn_hard /
@@ -92,17 +93,35 @@ Current ceiling: **harness only, no learning yet.** Escalation in *kind*:
   rejects it; collapse has two modes (dimensional vs point) → `is_collapsed` checks both.
   The gate is **code** (`is_collapsed`/`fidelity_ok` with versioned thresholds), not a
   human reading JSON. Acceptance = real sim control + cross-seed, never latent-loss alone.
+- **R2 collapse finding (the thesis, answered):** pure-consistency-dominant (coef 20) with
+  weak reward grounding (0.1) **collapses early** on DMC state — at 1k steps obs↔latent corr
+  fell 0.65→0.007, PR→1.3. Over 100k it RECOVERS (reward grounding works) but too slowly to
+  reach strong control. Root causes diagnosed: (a) **grounding too sparse** — only rollout
+  step 0 gets reward/value gradient, so the other H latents see only the collapse-prone
+  consistency loss; (b) **value bootstrap uses a zero-action proxy** → value head useless →
+  no real grounding/sample-efficiency signal; (c) **latent_dim=256 is oversized** for a 17-dim
+  cheetah state, so `is_collapsed` over-fires (rank_frac threshold 0.35 >> natural ~0.07-0.12).
+- **Threshold calibration:** the generic collapse thresholds need scaling to the intrinsic
+  state dim (or track obs_latent_corr + the recovery TREND, which were the informative signals).
 
-## Round-2 seed (next round)
-Implement RUNG 0 on this harness. Build order: SimNorm layer → MLP encoder + EMA target
-(stop-grad unit-tested) → residual AC predictor → distributional reward/value heads →
-GPU-batched MPPI → replay buffer + joint loss → wire collapse/fidelity into eval (every
-10k steps). FIRST: cheetah-run single-seed 100k-step **wall-clock + correctness probe**
-(confirm <2h, rising return; if planning-bound, drop samples to 256). THEN the
-consistency-only vs +grounding ablation. THEN 3 seeds × {cartpole, reacher-easy/hard,
-cheetah-run}, **serialized** sim runs (never parallel; `rosm nuke`/free MuJoCo between).
-Prereq: pull EXACT TD-MPC2 per-task DMC returns from the official results CSVs before
-locking sample-efficiency targets (do not trust recalled numbers).
+## Round-2 result (DONE 2026-06-17) & Round-3 seed (next)
+R2 built the full model (SimNorm enc+EMA, residual AC predictor, distributional reward/value,
+latent MPPI, trainer; 32 tests, GPU-verified) and ran cheetah-run 100k (18min, seed 0):
+**partial control, return 138**, representation under-collapsed but recovering. The pipeline
+works end-to-end; the bottleneck is grounding strength, not infra.
+
+**Round 3 (grounding fix — leading hypotheses, run as an ablation vs the R2 baseline above):**
+1. **Ground reward across the FULL rollout**, not just step 0: predict r_k from each rolled
+   latent z_hat_k vs the sub-trajectory rewards — spreads grounding to every latent (TD-MPC2's
+   real anti-collapse engine).
+2. **Fix the value bootstrap**: SARSA-style TD target r_0 + γ·Q_target(z1, a1) using the
+   ACTUAL next action a1 from the sub-trajectory (or a learned policy-prior π(z)), never zeros.
+3. **Right-size the latent / recalibrate diagnostics**: try latent_dim 64–128 for cheetah, and
+   scale collapse thresholds to intrinsic state dim (track obs_latent_corr + trend).
+Re-run cheetah-run 100k, compare return + collapse trajectory vs R2 (138). If control clears a
+real bar, scale to 3 seeds × {cartpole, reacher-easy/hard, cheetah-run}, **serialized**.
+Prereq before locking sample-efficiency targets: pull EXACT TD-MPC2 per-task DMC returns from
+the official results CSVs (do not trust recalled numbers).
 
 ## Open questions
 - Does pure latent-consistency (no reward grounding) avoid collapse on DMC state with

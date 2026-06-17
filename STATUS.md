@@ -1,9 +1,9 @@
 # STATUS — main
-updated: 2026-06-17 · loop 1
+updated: 2026-06-17 · loop 2
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI to control sim robots (dm_control); floor=cheetah/reacher, ceiling=match TD-MPC2 → manipulation → frozen V-JEPA enc → sim2real Go2/SO-101
-phase:    review (R1 done)
+phase:    review (R2 done, R3 = grounding fix next)
 owns:     whole repo (single session)
-doing:    R1 COMPLETE — venv(cu128)+eval harness+random baseline real-verified; metrics hardened vs self-deception (centered cosine, target-collapse gate, codified is_collapsed/fidelity_ok)
+doing:    R2 DONE — full model+MPPI+trainer built & GPU-verified (32 tests); cheetah-run 100k (18min, seed0) = PARTIAL control return 138 (vs random 7). Latent under-collapsed but RECOVERING (obs_corr 0.09→0.34, PR 2.2→6.9). Honest negative-ish result recorded.
 blocked:  none
-next:     R2 = RUNG 0 — SimNorm enc + EMA target + residual AC predictor + distributional reward/value + GPU MPPI; FIRST a cheetah-run 100k-step <2h wall-clock probe, THEN consistency-only vs +reward-grounding ablation, THEN 3 seeds × {cartpole,reacher-easy/hard,cheetah-run} serialized
-notes:    PIN mujoco==3.8.1 (dm_control 1.0.41 breaks on 3.9). venv torch=cu128 (system torch is CPU). MUJOCO_GL=egl for render. run via PYTHONPATH=$HOME/jepa-ctrl. acceptance=real sim control cross-seed, never latent-loss alone.
+next:     R3 grounding fix (ablation vs R2=138): (1) ground reward across FULL rollout not just step0; (2) SARSA value bootstrap with real next action (not zeros); (3) right-size latent 64-128 + recalibrate collapse thresholds to intrinsic dim. Re-run cheetah 100k, compare. Then 3 seeds × {cartpole,reacher-easy/hard,cheetah}.
+notes:    PIN mujoco==3.8.1. torch cu128 venv. MUJOCO_GL=egl. run via scripts/train.py (PYTHONPATH=$HOME/jepa-ctrl). 100k≈18min on 5080 (<2h gate OK). acceptance=real sim control cross-seed + eyes-on-render, never latent-loss alone. is_collapsed over-fires for oversized latent — trust obs_latent_corr + trend.
