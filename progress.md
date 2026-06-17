@@ -34,7 +34,7 @@ random baseline real-verified in the live simulator. **No model yet** (that is r
 | R1 | cheetah-run | random | 0,1,2 | 6.7 (±2.9 ci95) | floor; TD-MPC2 anchor ~772@500k |
 | R1 | reacher-easy | random | 0,1,2 | 39.6 | per-seed [54.3, 0.0, 64.3] — random occasionally hits target |
 | R2 | cheetah-run | JEPA-MPPI 100k | 0 | 138 (1 seed) | PARTIAL control (7→138 over 100k, 18min/100k). Latent under-collapsed but recovering: obs_corr 0.09→0.34, PR 2.2→6.9, rank_frac 0.13→0.23. cross-seed PENDING. |
-| R3 | cheetah-run | JEPA-MPPI 100k +grounding-fix | 0 | **557** (peak 595) | **GROUNDING FIX WORKS → 138→557 (4×).** Full-rollout reward + SARSA value bootstrap. Visible RUNNING GAIT (render confirmed). RUNG-0 met single-seed. Representation healthy (PR→9.1, obs_corr 0.31); `is_collapsed=True` is a THRESHOLD ARTIFACT (256-dim latent for a 17-dim state) — strong control proves the latent is informative. cross-seed PENDING. |
+| R3 | cheetah-run | JEPA-MPPI 100k +grounding-fix | **0,1,2** | **522 ± 139** | **RUNG 0 MET CROSS-SEED.** Grounding fix (full-rollout reward + SARSA value bootstrap) → 138→557 (4×). Per-seed [557, 369, 640], all ≫ random 6.7; visible RUNNING GAIT (render confirmed). ~20min/100k. `is_collapsed` recalibrated to absolute eff-rank floor (the fraction-of-d rule was a false-alarm artifact, verified on the real model). |
 
 (Baselines only; these are the "did nothing" floor the learned controller must beat.)
 
@@ -60,9 +60,10 @@ TD-MPC2-grounded). ~1M params, all-MLP, no decoder.
 
 ## Frontier ladder (## Frontier — ambition horizon)
 
-Current ceiling: **JEPA-MPPI RUNS cheetah-run — return 557 @100k (seed 0, visible gallop gait).** The core bet is validated single-seed. RUNG 0 needs cross-seed confirmation, then RUNG 1. Escalation in *kind*:
-0. **RUNG 0 (floor):** reward-head MPPI controls cheetah-run + reacher cross-seed, visually
-   confirmed; run the **pure-consistency vs +reward-grounding ablation** (the thesis).
+Current ceiling: **JEPA-MPPI RUNS cheetah-run — 522 ± 139 @100k CROSS-SEED (0,1,2), visible gallop. RUNG 0 MET.** The core bet (laptop-scale action-conditioned JEPA + latent MPPI controls a sim robot) is validated. Next: RUNG 1 (walker/reacher, harder dynamics) + the TD-MPC2 head-to-head; and push cheetah further (more steps → toward ~772). Escalation in *kind*:
+0. **RUNG 0 (floor) — DONE for cheetah-run (522±139 cross-seed, visible gallop); reacher in
+   RUNG 1.** Thesis answered: reward grounding is REQUIRED — pure-consistency-dominant collapses;
+   full-rollout reward grounding + SARSA value bootstrap fixes it (138→557).
 1. RUNG 1: harder dynamics same machinery — walker-walk → walker-run → finger-turn_hard /
    acrobot; match TD-MPC2 at 100k/500k.
 2. RUNG 2: **match TD-MPC2 sample efficiency** on the easy/medium DMC set; add policy-prior;
@@ -131,14 +132,18 @@ real bar, scale to 3 seeds × {cartpole, reacher-easy/hard, cheetah-run}, **seri
 Prereq before locking sample-efficiency targets: pull EXACT TD-MPC2 per-task DMC returns from
 the official results CSVs (do not trust recalled numbers).
 
-**Round 4 (next):**
-1. **CROSS-SEED validate** R3 on cheetah-run seeds 1,2 (serialized) — confirm 557 isn't a lucky
-   seed → legitimately claim RUNG 0 met cross-seed.
-2. **Recalibrate `is_collapsed`** to absolute structural floors (effective_rank/PR above a small
-   constant) instead of fraction-of-d, so an oversized-but-healthy latent isn't false-flagged;
-   keep point-collapse checks; version + regression-test against the R3 healthy latent.
-3. Then **RUNG 1**: walker-walk/run + reacher-easy/hard, and pull TD-MPC2 per-task numbers for
-   the head-to-head sample-efficiency table.
+**Round 4 (DONE 2026-06-17):** cross-seed validated — cheetah-run 522±139 @100k (seeds 0,1,2),
+**RUNG 0 MET** ✓. `is_collapsed` recalibrated to an absolute effective-rank floor (the
+fraction-of-d rule false-fired on the oversized 256-d latent; verified on the real R3 model
+which reads healthy) ✓.
+
+**Round 5 (next) — RUNG 1 (generalize + benchmark):**
+1. Does the validated JEPA-MPPI generalize beyond cheetah? Run **reacher-easy** + **walker-walk**
+   (then walker-run) with the R3 config (latent auto-sized 128/256), seed 0 as a generalization
+   probe, then cross-seed the ones that control.
+2. Pull EXACT TD-MPC2 per-task DMC returns (official results CSVs) → head-to-head
+   sample-efficiency table at 100k/500k.
+3. Push cheetah-run to 300k–500k steps to see how close to ~772 it gets (still <2h/run).
 
 ## Open questions
 - Does pure latent-consistency (no reward grounding) avoid collapse on DMC state with
