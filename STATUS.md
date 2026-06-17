@@ -1,9 +1,9 @@
 # STATUS — main
-updated: 2026-06-17 · loop 4
+updated: 2026-06-17 · loop 5
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI to control sim robots (dm_control); floor=cheetah/reacher, ceiling=match TD-MPC2 → manipulation → frozen V-JEPA enc → sim2real Go2/SO-101
-phase:    review (RUNG 0 MET — core bet validated)
+phase:    review (RUNG 0 met; RUNG 1 = generalizes but UNSTABLE)
 owns:     whole repo (single session)
-doing:    RUNG 0 MET CROSS-SEED — cheetah-run 522±139 @100k (seeds 0,1,2: 557/369/640), visible gallop gait, ~20min/100k on 5080. Grounding fix (full-rollout reward + SARSA value bootstrap) was the unlock (138→522). is_collapsed recalibrated (absolute eff-rank floor). All committed+pushed.
+doing:    RUNG 0 MET (cheetah 522±139 cross-seed). RUNG 1 probe: method GENERALIZES but UNSTABLE — reacher-easy nearly SOLVED (949@80k) then DIVERGED to 20@100k; walker-walk partial (peak 419, final 227). Training stability is the new bottleneck. All committed+pushed.
 blocked:  none
-next:     RUNG 1 — generalize: reacher-easy + walker-walk/run with R3 config (probe seed0, then cross-seed the ones that control). Pull TD-MPC2 per-task DMC numbers for head-to-head. Push cheetah to 300k-500k toward ~772.
-notes:    PIN mujoco==3.8.1. torch cu128 venv. MUJOCO_GL=egl. scripts/train.py (PYTHONPATH=$HOME/jepa-ctrl). 100k≈18-21min (<2h gate). acceptance=real sim control cross-seed + eyes-on-render. best ckpt runs/cheetah_s*_r3/model.pt. THESIS ANSWERED: reward grounding REQUIRED (pure-consistency collapses).
+next:     R6 STABILITY (Debug Protocol): diagnose reacher 949→20 divergence — value overestimation/divergence most likely. Add per-update value-loss + value-magnitude logging FIRST, then ablate fixes (lower value LR / stronger value_tau Polyak, reward/value normalization, longer EMA, policy prior). THEN cross-seed reacher+walker, TD-MPC2 head-to-head, push cheetah to 300-500k.
+notes:    PIN mujoco==3.8.1. torch cu128 venv. MUJOCO_GL=egl. scripts/train.py (PYTHONPATH=$HOME/jepa-ctrl). 100k≈18-23min (<2h gate). acceptance=real sim control cross-seed + eyes-on-render. ckpts runs/<task>_s*_r*/model.pt. reward grounding REQUIRED (thesis). reacher CAN be solved (949) — it's a stability bug, not a capability gap.

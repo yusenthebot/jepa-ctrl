@@ -35,6 +35,8 @@ random baseline real-verified in the live simulator. **No model yet** (that is r
 | R1 | reacher-easy | random | 0,1,2 | 39.6 | per-seed [54.3, 0.0, 64.3] — random occasionally hits target |
 | R2 | cheetah-run | JEPA-MPPI 100k | 0 | 138 (1 seed) | PARTIAL control (7→138 over 100k, 18min/100k). Latent under-collapsed but recovering: obs_corr 0.09→0.34, PR 2.2→6.9, rank_frac 0.13→0.23. cross-seed PENDING. |
 | R3 | cheetah-run | JEPA-MPPI 100k +grounding-fix | **0,1,2** | **522 ± 139** | **RUNG 0 MET CROSS-SEED.** Grounding fix (full-rollout reward + SARSA value bootstrap) → 138→557 (4×). Per-seed [557, 369, 640], all ≫ random 6.7; visible RUNNING GAIT (render confirmed). ~20min/100k. `is_collapsed` recalibrated to absolute eff-rank floor (the fraction-of-d rule was a false-alarm artifact, verified on the real model). |
+| R5 | reacher-easy | JEPA-MPPI 100k | 0 | 22 (**peak 949@80k**) | **GENERALIZES but UNSTABLE** — nearly SOLVED reacher (949@80k, ~960=solved) then catastrophically DIVERGED to 20 by 100k. Training stability is the new bottleneck. |
+| R5 | walker-walk | JEPA-MPPI 100k | 0 | 227 (peak 419) | partial control (random ~45); noisy/unstable across evals. |
 
 (Baselines only; these are the "did nothing" floor the learned controller must beat.)
 
@@ -137,13 +139,20 @@ the official results CSVs (do not trust recalled numbers).
 fraction-of-d rule false-fired on the oversized 256-d latent; verified on the real R3 model
 which reads healthy) ✓.
 
-**Round 5 (next) — RUNG 1 (generalize + benchmark):**
-1. Does the validated JEPA-MPPI generalize beyond cheetah? Run **reacher-easy** + **walker-walk**
-   (then walker-run) with the R3 config (latent auto-sized 128/256), seed 0 as a generalization
-   probe, then cross-seed the ones that control.
-2. Pull EXACT TD-MPC2 per-task DMC returns (official results CSVs) → head-to-head
-   sample-efficiency table at 100k/500k.
-3. Push cheetah-run to 300k–500k steps to see how close to ~772 it gets (still <2h/run).
+**Round 5 (DONE 2026-06-17) — RUNG 1 generalization probe:** the method GENERALIZES but is
+UNSTABLE. reacher-easy nearly SOLVED (949@80k) then catastrophically diverged to 20@100k;
+walker-walk partial (peak 419, final 227, noisy). Generalization confirmed; **training stability
+is the new bottleneck.**
+
+**Round 6 (next) — STABILITY (the new bottleneck):**
+1. Diagnose the reacher 949→20 divergence (Debug Protocol). Leading hypotheses: value
+   OVERESTIMATION / divergence (the SARSA bootstrap + ensemble may need stronger target
+   stabilization, value clipping, or a slower value LR); representation drift late in training;
+   or replay non-stationarity. Add per-update value-loss + value-magnitude logging to catch it.
+2. Likely fixes to try (ablate): lower value LR / stronger Polyak (value_tau), reward/value
+   normalization, longer EMA target horizon, or a learned policy prior to stabilize the bootstrap.
+3. THEN resume RUNG 1: cross-seed reacher + walker once stable; pull TD-MPC2 per-task DMC numbers
+   for the head-to-head; push cheetah to 300k–500k toward ~772.
 
 ## Open questions
 - Does pure latent-consistency (no reward grounding) avoid collapse on DMC state with
