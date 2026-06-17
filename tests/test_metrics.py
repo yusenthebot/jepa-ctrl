@@ -55,6 +55,18 @@ def test_dimensional_collapse_detected_and_flagged():
     assert is_collapsed(d) is True
 
 
+def test_oversized_but_healthy_latent_not_flagged():
+    # R3 lesson: a 256-dim latent that genuinely spans ~10 dims with healthy scale (encoding a
+    # low-dim state) must NOT be flagged collapsed, even though rank_fraction is tiny. The old
+    # fraction-of-d rule false-fired here; the absolute effective-rank floor must not.
+    rng = np.random.default_rng(5)
+    Z = rng.standard_normal((512, 10)) @ rng.standard_normal((10, 256))  # true rank 10, healthy
+    d = collapse_diagnostics(Z)
+    assert d["effective_rank"] > 5  # spans ~10 effective dims
+    assert d["rank_fraction"] < 0.1  # ...but tiny as a fraction of 256
+    assert is_collapsed(d) is False  # absolute-floor gate is not fooled
+
+
 def test_fidelity_identical_passes():
     rng = np.random.default_rng(1)
     z = rng.standard_normal((4, 256, 32))  # K=4, N=256, d=32, healthy targets

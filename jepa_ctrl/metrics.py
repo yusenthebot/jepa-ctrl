@@ -26,11 +26,14 @@ import numpy as np  # noqa: E402
 from scipy.spatial.distance import pdist  # noqa: E402
 
 # --- codified acceptance thresholds (revisit in round 2 with real model data) ---
-COLLAPSE_RANK_FRACTION_MIN = 0.35  # eff_rank / d below this -> dimensional collapse
-COLLAPSE_PR_FRACTION_MIN = 0.35  # participation_ratio / d below this -> dimensional collapse
-COLLAPSE_STD_FLOOR = 0.02  # per-dim std below this -> point collapse (SimNorm-calibrated)
+COLLAPSE_EFF_RANK_MIN = 3.0  # ABSOLUTE effective-rank floor (not fraction-of-d): a latent
+# spanning < ~3 effective dims is degenerate. Absolute so an OVERSIZED latent for a low-dim
+# state is not false-flagged — the R3 lesson: a 256-d latent that controlled cheetah (17-d state)
+# to return 557 was wrongly flagged "collapsed" by the old fraction-of-d rule. The gold signals
+# for representation quality remain real control return + obs<->latent correlation (logged by
+# the trainer); is_collapsed is only a cheap guard against true degeneracy.
+COLLAPSE_STD_FLOOR = 0.02  # per-dim std below this -> point collapse
 COLLAPSE_PAIRWISE_FLOOR = 0.05  # mean pairwise dist below this -> point collapse
-COLLAPSE_DEAD_FRACTION_MAX = 0.5  # more than half the dims dead -> collapse
 FIDELITY_CENTERED_COS_MIN = 0.6  # centered cosine at k=1 must clear this
 FIDELITY_NRMSE_MAX = 1.0  # collapse-aware NRMSE at k=1 must stay under this
 
@@ -112,23 +115,20 @@ def collapse_diagnostics(Z: np.ndarray, dead_thresh: float = COLLAPSE_STD_FLOOR)
 def is_collapsed(
     diag: dict,
     *,
-    rank_fraction_min: float = COLLAPSE_RANK_FRACTION_MIN,
-    pr_fraction_min: float = COLLAPSE_PR_FRACTION_MIN,
+    eff_rank_min: float = COLLAPSE_EFF_RANK_MIN,
     std_floor: float = COLLAPSE_STD_FLOOR,
     pairwise_floor: float = COLLAPSE_PAIRWISE_FLOOR,
-    dead_fraction_max: float = COLLAPSE_DEAD_FRACTION_MAX,
 ) -> bool:
-    """Codified collapse verdict. Fires on EITHER dimensional or point collapse.
-
-    No single guard is trusted — a latent must clear every mode to be declared healthy.
+    """Codified collapse verdict — fires only on TRUE degeneracy, NOT on an oversized-but-healthy
+    latent. Dimensional collapse: effective_rank below an ABSOLUTE floor (fraction-of-d over-fires
+    when latent_dim >> intrinsic state dim — R3 proved this). Point collapse: per-dim std or mean
+    pairwise distance near zero. Representation *quality* is judged by control return + obs<->latent
+    correlation (the trainer logs both), not by this cheap catastrophic-degeneracy guard.
     """
     return bool(
-        diag["rank_fraction"] < rank_fraction_min  # dimensional (SVD)
-        or diag["pr_fraction"] < pr_fraction_min  # dimensional (covariance)
-        or diag["per_dim_std_mean"] < std_floor  # point (scale)
-        or diag["mean_pairwise_dist"] < pairwise_floor  # point (concentration)
-        or diag["dead_dim_fraction"] > dead_fraction_max  # many dead dims
-        or diag["rel_dead_dim_fraction"] > dead_fraction_max  # relatively dead dims
+        diag["effective_rank"] < eff_rank_min  # dimensional collapse (absolute)
+        or diag["per_dim_std_mean"] < std_floor  # point collapse (scale)
+        or diag["mean_pairwise_dist"] < pairwise_floor  # point collapse (concentration)
     )
 
 
