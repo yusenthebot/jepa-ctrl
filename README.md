@@ -36,6 +36,14 @@ and the `## Frontier` ladder.
 
 ## Status
 
-Round 1 in progress: literature DIVERGE (V-JEPA2-AC / I-JEPA / DreamerV3 / TD-MPC2) +
-cross-seed evaluation harness + a random-baseline controller running in the real sim.
-Architecture blueprint and results land in `progress.md`.
+**Round 1 complete** — literature DIVERGE done, the cross-seed evaluation harness is built
+and real-verified against live dm_control (random baseline, frames inspected by eye), and the
+acceptance metrics are hardened against self-deception (centered cosine, target-collapse
+gating, codified `is_collapsed`/`fidelity_ok`). The locked architecture blueprint, results
+table, and the frontier ladder live in `progress.md`. Round 2 implements the model (RUNG 0).
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+PYTHONPATH=. MUJOCO_GL=egl python -m jepa_ctrl.cli --task cheetah-run --controller random --seeds 0,1,2
+```

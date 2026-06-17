@@ -1,0 +1,15 @@
+[project]
+name = "jepa-ctrl"
+version = "0.1.0"
+description = "Laptop-scale action-conditioned JEPA latent world model + latent planning for sim robot control"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
