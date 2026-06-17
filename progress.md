@@ -34,6 +34,7 @@ random baseline real-verified in the live simulator. **No model yet** (that is r
 | R1 | cheetah-run | random | 0,1,2 | 6.7 (±2.9 ci95) | floor; TD-MPC2 anchor ~772@500k |
 | R1 | reacher-easy | random | 0,1,2 | 39.6 | per-seed [54.3, 0.0, 64.3] — random occasionally hits target |
 | R2 | cheetah-run | JEPA-MPPI 100k | 0 | 138 (1 seed) | PARTIAL control (7→138 over 100k, 18min/100k). Latent under-collapsed but recovering: obs_corr 0.09→0.34, PR 2.2→6.9, rank_frac 0.13→0.23. cross-seed PENDING. |
+| R3 | cheetah-run | JEPA-MPPI 100k +grounding-fix | 0 | **557** (peak 595) | **GROUNDING FIX WORKS → 138→557 (4×).** Full-rollout reward + SARSA value bootstrap. Visible RUNNING GAIT (render confirmed). RUNG-0 met single-seed. Representation healthy (PR→9.1, obs_corr 0.31); `is_collapsed=True` is a THRESHOLD ARTIFACT (256-dim latent for a 17-dim state) — strong control proves the latent is informative. cross-seed PENDING. |
 
 (Baselines only; these are the "did nothing" floor the learned controller must beat.)
 
@@ -59,7 +60,7 @@ TD-MPC2-grounded). ~1M params, all-MLP, no decoder.
 
 ## Frontier ladder (## Frontier — ambition horizon)
 
-Current ceiling: **JEPA-MPPI partially controls cheetah-run (return 138 @100k, 1 seed); representation under-collapsed but recovering.** RUNG 0 NOT yet met (weak control + not cross-seed). Escalation in *kind*:
+Current ceiling: **JEPA-MPPI RUNS cheetah-run — return 557 @100k (seed 0, visible gallop gait).** The core bet is validated single-seed. RUNG 0 needs cross-seed confirmation, then RUNG 1. Escalation in *kind*:
 0. **RUNG 0 (floor):** reward-head MPPI controls cheetah-run + reacher cross-seed, visually
    confirmed; run the **pure-consistency vs +reward-grounding ablation** (the thesis).
 1. RUNG 1: harder dynamics same machinery — walker-walk → walker-run → finger-turn_hard /
@@ -104,7 +105,14 @@ Current ceiling: **JEPA-MPPI partially controls cheetah-run (return 138 @100k, 1
 - **Threshold calibration:** the generic collapse thresholds need scaling to the intrinsic
   state dim (or track obs_latent_corr + the recovery TREND, which were the informative signals).
 
-## Round-2 result (DONE 2026-06-17) & Round-3 seed (next)
+## Round 2–3 results (DONE 2026-06-17) & Round-4 seed (next)
+
+**R3 OUTCOME: grounding fix VALIDATED — cheetah-run 138→557 (4×), visible running gait, RUNG 0
+met single-seed.** Hypotheses 1 (full-rollout reward) + 2 (SARSA value bootstrap) were the fix.
+Hypothesis 3 (right-size latent / recalibrate `is_collapsed`) is still open — `is_collapsed`
+over-fires on the 256-dim latent (a proven artifact, since control is strong). The original
+R2/R3 planning notes follow.
+
 R2 built the full model (SimNorm enc+EMA, residual AC predictor, distributional reward/value,
 latent MPPI, trainer; 32 tests, GPU-verified) and ran cheetah-run 100k (18min, seed 0):
 **partial control, return 138**, representation under-collapsed but recovering. The pipeline
@@ -122,6 +130,15 @@ Re-run cheetah-run 100k, compare return + collapse trajectory vs R2 (138). If co
 real bar, scale to 3 seeds × {cartpole, reacher-easy/hard, cheetah-run}, **serialized**.
 Prereq before locking sample-efficiency targets: pull EXACT TD-MPC2 per-task DMC returns from
 the official results CSVs (do not trust recalled numbers).
+
+**Round 4 (next):**
+1. **CROSS-SEED validate** R3 on cheetah-run seeds 1,2 (serialized) — confirm 557 isn't a lucky
+   seed → legitimately claim RUNG 0 met cross-seed.
+2. **Recalibrate `is_collapsed`** to absolute structural floors (effective_rank/PR above a small
+   constant) instead of fraction-of-d, so an oversized-but-healthy latent isn't false-flagged;
+   keep point-collapse checks; version + regression-test against the R3 healthy latent.
+3. Then **RUNG 1**: walker-walk/run + reacher-easy/hard, and pull TD-MPC2 per-task numbers for
+   the head-to-head sample-efficiency table.
 
 ## Open questions
 - Does pure latent-consistency (no reward grounding) avoid collapse on DMC state with
