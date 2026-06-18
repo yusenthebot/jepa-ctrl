@@ -1,9 +1,9 @@
 # STATUS — main
-updated: 2026-06-18 · loop 6
-goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI to control sim robots; FRONTIER MODE (Yusen: breakthroughs not reproduction) — do what a reconstruction/reward world model structurally can't
-phase:    frontier (RUNG 0 floor solid; building GROUNDLESS)
+updated: 2026-06-18 · loop 7
+goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE (breakthroughs not reproduction)
+phase:    frontier (GROUNDLESS red-teamed — headline overturned to a truer finding)
 owns:     whole repo (single session)
-doing:    PIVOT to frontier. R6 stability DONE (anneal explore_std → reacher cross-seed ~752; value-divergence hypothesis refuted). Active frontier bet GROUNDLESS: 3-arm ablation {consistency+inverse-dynamics | +SIGReg | +reward} — can a TASK-AGNOSTIC signal replace reward as the anti-collapse grounding → REWARD-FREE controllable latent? Build workflow wc0fnuu9l in flight (sim-free TDD).
+doing:    GROUNDLESS red-team VERDICT: "SIGReg replaces reward" REFUTED. Real finding (stronger): RAW-latent multi-step latent-consistency (EMA+stop-grad, the JEPA objective itself) gives REWARD-FREE cheetah control 493 cross-seed (~94% of reward-grounded 522), NO SimNorm/SIGReg/reward/inverse-dyn. This OVERTURNS our R2 "consistency collapses" — that was a SimNorm artifact. Frozen-random-repr control fails (16) → learned latent essential. seed 2 (b1koihwz7) running to finish cross-seed.
 blocked:  none
-next:     verify GROUNDLESS build myself (SIGReg math + reward-free DETACH isolation + inverse-dyn grads); wire train.py --grounding {reward,inverse_dynamics,sigreg}; run 3-arm × seeds matrix on cheetah (+reacher goal-MPPI); success = a reward-free arm ≥365 cheetah cross-seed w/ obs_corr>0.4. Then frontier ladder: distractor-robustness (pixels), latent-disagreement exploration, temporal-abstraction.
-notes:    PIN mujoco==3.8.1. torch cu128 venv. MUJOCO_GL=egl. scripts/train.py (PYTHONPATH=$HOME/jepa-ctrl). 100k≈20min (<2h gate). acceptance=real sim control cross-seed + eyes-on-render, never latent-loss alone. SIGReg arm uses RAW latent (no SimNorm). reward-free arms = reward/value heads trained on DETACHED latents (post-hoc probe only). serialize sim runs; rosm nuke between.
+next:     (1) finish consistency-only cross-seed (seed 2). (2) MATCHED follow-up: reward-on-RAW + SimNorm-vs-raw ablation, to cleanly attribute (latent parameterization is the load-bearing variable, not grounding). (3) investigate WHY raw+EMA+stop-grad avoids collapse where SimNorm doesn't. (4) next frontier rung: distractor robustness (JEPA killer app, pixels). RED-TEAM every headline.
+notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. scripts/train.py --grounding {reward,inverse_dynamics,sigreg} [--sigreg-coef 0 = consistency-only] [--freeze-repr = red-team control]. 100k≈20min. acceptance=real sim control cross-seed + eyes-on + RED-TEAM. return is the gold signal; obs_corr is a noisy probe.

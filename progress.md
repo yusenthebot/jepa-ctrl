@@ -179,7 +179,7 @@ probe) so the representation is **genuinely reward-free**; MPPI still plans with
 - **Builds on:** existing WorldModel/MPPI/metrics verbatim; adds an inverse-dyn head + SIGReg loss +
   arm flag + detach. ~20min/run; full 3-arm × 3-seed matrix is an overnight serialized loop.
 
-### GROUNDLESS R1 result (2026-06-18, PRELIMINARY — pending red-team)
+### GROUNDLESS R1 matrix (2026-06-18) — superseded by the RED-TEAM VERDICT below
 cheetah-run @100k, cross-seed (0,1,2):
 - **SIGReg (reward-free): 387 ± 87** [457, 290, 415] — **CLEARS the ≥365 bar**, ~74% of reward-grounded.
   All 3 seeds gallop (render confirmed). obs_corr rising (s0 0.46; mean ~0.32 — the >0.4 sub-criterion
@@ -187,9 +187,25 @@ cheetah-run @100k, cross-seed (0,1,2):
 - **inverse-dynamics (reward-free): 31 ± 24** — COLLAPSED (obs_corr ~0). Action-from-latent does NOT
   prevent collapse here. Sharp contrast: not any self-supervised signal works — the distributional one does.
 - Controls: reward 522 ± 139 (positive); consistency-only 138 (negative, R2).
-- **RED-TEAM IN PROGRESS** (be1ekgybn): matched consistency-only (sigreg_coef=0) must collapse to
-  prove SIGReg is causal; frozen-random-repr+planning must fail to prove the learned latent matters.
-  Headline NOT recorded as confirmed until these clear.
+
+### RED-TEAM VERDICT (2026-06-18) — SIGReg claim REFUTED; a BETTER, truer finding emerged
+The discriminating controls overturned the headline (the red-team working as intended):
+- **Control A — consistency-ONLY (raw latent, NO SIGReg, NO reward): 493** (524, 462), obs_corr
+  **0.50–0.60.** Does NOT collapse; controls cheetah reward-free BETTER than SIGReg (387) and at
+  **~94% of the reward-grounded arm (522)**. ⇒ SIGReg is **NOT causal** — unnecessary, slightly HURTS.
+  "SIGReg replaces reward" = **REFUTED**.
+- **Control B — frozen-random repr + planning: 16** (16, 17). Planner + post-hoc reward head over a
+  RANDOM latent cannot control ⇒ the **learned latent is essential** (CONFIRMED, not a planner artifact;
+  its obs_corr 0.67 is a random-projection artifact — return, not corr, is the gold signal).
+
+**Real finding (stronger) — OVERTURNS our own R2 conclusion:** plain **multi-step latent consistency
+on a RAW (un-normalized) latent** (EMA target + stop-grad — the JEPA objective itself) is **sufficient
+for reward-free locomotion control**: 493 cross-seed, no SimNorm / SIGReg / reward / inverse-dynamics.
+R2's "pure consistency collapses; reward required" was a **SimNorm artifact** — the simplex lets the
+encoder collapse to a point under reward-free consistency; an un-normalized latent with EMA/stop-grad
+does not. The load-bearing variable is the **latent parameterization**, not the grounding signal.
+Caveat (honest): reward-arm used SimNorm vs consistency-only raw — a matched reward-on-raw run is the
+clean follow-up. Status: 2 seeds (524/462) + gallop render confirmed; seed 2 running for cross-seed.
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
