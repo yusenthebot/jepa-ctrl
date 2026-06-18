@@ -118,6 +118,8 @@ def main() -> None:
     p.add_argument("--grounding", default="reward",
                    choices=["reward", "inverse_dynamics", "sigreg"],
                    help="GROUNDLESS arm; inverse_dynamics/sigreg are reward-free")
+    p.add_argument("--latent-norm", default="auto", choices=["auto", "simnorm", "none"],
+                   help="auto = none for sigreg arm else simnorm; override for matched ablations")
     p.add_argument("--sigreg-coef", type=float, default=1.0)
     p.add_argument("--id-coef", type=float, default=1.0)
     p.add_argument("--freeze-repr", action="store_true",
@@ -133,7 +135,8 @@ def main() -> None:
 
     env = DMCEnv(a.task, seed=a.seed, action_repeat=a.action_repeat)
     latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
-    latent_norm = "none" if a.grounding == "sigreg" else "simnorm"  # SIGReg needs a RAW latent
+    latent_norm = a.latent_norm if a.latent_norm != "auto" else (
+        "none" if a.grounding == "sigreg" else "simnorm")  # SIGReg needs RAW; else override-able
     mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
                        latent_norm=latent_norm)
     wm = WorldModel(mcfg)
