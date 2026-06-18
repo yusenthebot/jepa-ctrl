@@ -207,8 +207,20 @@ does not. The load-bearing variable is the **latent parameterization**, not the 
 Caveat (honest): reward-arm used SimNorm vs consistency-only raw — matched reward-on-raw run is the
 clean follow-up (running). **Cross-seed CONFIRMED: consistency-only RAW = 496 ± 31** (524/462/501),
 gallop rendered, obs_corr 0.34–0.57 — and LOWER variance than reward-grounded (±31 vs ±139).
-Matched 2×2 raw-vs-SimNorm attribution running (b4ojqc7d6): predicts consistency-only-SimNorm
-collapses (~138) while consistency-only-raw works (496) ⇒ latent parameterization is load-bearing.
+**Matched 2×2 attribution — CONFIRMED (latent parameterization is load-bearing, not grounding):**
+
+| latent | reward-free (consistency-only) | reward-grounded |
+|--------|--------------------------------|-----------------|
+| **RAW**     | **496** (524/462/501, ±31) ✓ | 438 (543/333, noisier) |
+| **SimNorm** | **4** (3/5) ✗ TOTAL COLLAPSE | 522 (R3, ±139) ✓ |
+
+⇒ Reward-free consistency **collapses on SimNorm (4)** but **controls on a raw latent (496)**. The
+R2 "consistency collapses; reward required" was a **SimNorm simplex artifact** — the simplex permits
+point-collapse under reward-free consistency; an un-normalized latent + EMA/stop-grad does not.
+Reward grounding *rescues* SimNorm (4→522) but is **unnecessary** on a raw latent (496 > the noisier
+reward-grounded-raw 438). **Frontier finding, red-teamed + fully attributed:** a raw-latent JEPA
+(multi-step consistency, EMA+stop-grad, NO decoder, NO reward) gives reward-free cheetah control at
+496±31 — the cleanest reward-free result, and it overturns our own earlier conclusion. GROUNDLESS done.
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
