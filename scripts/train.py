@@ -79,8 +79,13 @@ def collapse_probe(model, task, seed, device, action_repeat, n=256) -> dict:
             if d:
                 o = env.reset()
         ob = np.asarray(obs, np.float32)
+        model = model.to(device).eval()
         with torch.no_grad():
-            Z = model.to(device).eval().encode(torch.tensor(ob, device=device)).cpu().numpy()
+            z = model.encode(torch.tensor(ob, device=device))
+            Z = z.cpu().numpy()
+            a0 = torch.zeros(len(ob), model.cfg.act_dim, device=device)
+            r_mag = float(model.reward_head.to_scalar(model.reward_head.logits(z, a0)).abs().mean())
+            v_mag = float(model.value_head.to_scalar(model.value_head.logits(z, a0)).abs().mean())
         diag = collapse_diagnostics(Z)
         i, j = rng.integers(0, len(ob), (2, 200))
         od = la.norm(ob[i] - ob[j], axis=1)
@@ -93,6 +98,8 @@ def collapse_probe(model, task, seed, device, action_repeat, n=256) -> dict:
         "participation_ratio": diag["participation_ratio"],
         "mean_pairwise": diag["mean_pairwise_dist"],
         "obs_latent_corr": corr,
+        "pred_reward_mag": r_mag,
+        "pred_value_mag": v_mag,
         "collapsed": is_collapsed(diag),
     }
 
@@ -137,9 +144,9 @@ def main() -> None:
         curve.append((step, ret))
         collapse_log.append({"step": step, "return": ret, **cp})
         el = time.time() - t_start
-        print(f"[eval] step {step:6d}  return {ret:7.1f}  rank_frac {cp['rank_fraction']:.2f} "
-              f"PR {cp['participation_ratio']:.1f} obs_corr {cp['obs_latent_corr']:.3f} "
-              f"collapsed {cp['collapsed']}  elapsed {el/60:.1f}min", flush=True)
+        print(f"[eval] step {step:6d}  return {ret:7.1f}  PR {cp['participation_ratio']:.1f} "
+              f"obs_corr {cp['obs_latent_corr']:.3f} v_mag {cp['pred_value_mag']:.1f} "
+              f"r_mag {cp['pred_reward_mag']:.2f}  elapsed {el/60:.1f}min", flush=True)
 
     # explicit loop = precise wall-clock instrumentation
     obs = torch.as_tensor(env.reset(), dtype=torch.float32, device=device)
