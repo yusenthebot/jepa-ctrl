@@ -7,7 +7,15 @@ import torch.nn.functional as F
 from torch import nn
 
 from .config import ModelConfig
-from .nets import DistHead, Encoder, InverseDynamicsHead, Predictor, symlog
+from .nets import (
+    CNNEncoder,
+    Decoder,
+    DistHead,
+    Encoder,
+    InverseDynamicsHead,
+    Predictor,
+    symlog,
+)
 
 
 def _ema_update_(target: nn.Module, online: nn.Module, tau: float) -> None:
@@ -28,14 +36,19 @@ class WorldModel(nn.Module):
     via `ema_update`.
     """
 
-    def __init__(self, cfg: ModelConfig) -> None:
+    def __init__(self, cfg: ModelConfig, build_decoder: bool = False) -> None:
         super().__init__()
         self.cfg = cfg
         ld, ad = cfg.latent_dim, cfg.act_dim
         g = cfg.simnorm_groups
 
         ln = cfg.latent_norm
-        self.encoder = Encoder(cfg.obs_dim, ld, cfg.enc_hidden, g, latent_norm=ln)
+        if cfg.encoder_type == "cnn":
+            # pixel path: the conv tower replaces the MLP, downstream predictor/heads unchanged
+            # (encoder-agnostic). pre_simnorm() mirrors the MLP Encoder so rollout_latents works.
+            self.encoder = CNNEncoder(cfg.obs_shape, ld, simnorm_groups=g, latent_norm=ln)
+        else:
+            self.encoder = Encoder(cfg.obs_dim, ld, cfg.enc_hidden, g, latent_norm=ln)
         self.target_encoder = copy.deepcopy(self.encoder)
         self._freeze(self.target_encoder)
 
@@ -48,6 +61,16 @@ class WorldModel(nn.Module):
         )
         self.target_value_head = copy.deepcopy(self.value_head)
         self._freeze(self.target_value_head)
+
+        # Decoder is built ONLY for the reconstruction baseline (Dreamer-style observation
+        # model). The JEPA arm (latent consistency) never owns one — that is the structural
+        # difference the distractor head-to-head exploits. Requires the CNN pixel encoder.
+        if build_decoder:
+            if cfg.encoder_type != "cnn" or cfg.obs_shape is None:
+                raise ValueError("reconstruction decoder requires encoder_type='cnn' + obs_shape")
+            self.decoder: Decoder | None = Decoder(ld, cfg.obs_shape)
+        else:
+            self.decoder = None
 
     @staticmethod
     def _freeze(module: nn.Module) -> None:
@@ -129,6 +152,36 @@ class WorldModel(nn.Module):
         """
         latents = self.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
         return self.consistency_loss_from(obs_seq, action_seq, latents)
+
+    # --- reconstruction baseline (decoder arm only) -------------------------------
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Decode a latent to reconstructed frames in [-0.5, 0.5]. Recon baseline only."""
+        if self.decoder is None:
+            raise RuntimeError("decode() requires a decoder (build WorldModel with build_decoder)")
+        return self.decoder(z)
+
+    def reconstruction_loss(
+        self,
+        obs_seq: torch.Tensor,
+        latents: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """Dreamer-style pixel reconstruction over the open-loop rollout (RECONSTRUCTION arm).
+
+        REPLACES latent consistency: the PREDICTED latent must reconstruct the FUTURE frame.
+        obs_seq: (H+1, batch, C, H, W) uint8 — o_t..o_{t+H}. latents: [z_0, z_hat_1, .., z_hat_H]
+        from rollout_latents; latents[k] is the predicted latent of o_{t+k}. For k=1..H the loss
+        is rho^k * MSE(decode(latents[k]), normalize(obs_seq[k])), where normalize matches the
+        encoder's uint8 -> [-0.5, 0.5] centering. The MSE gradient reaches the decoder, the
+        predictor (via every z_hat) and the encoder (via z_0), so pixel reconstruction — not
+        latent consistency — shapes the representation; modeling the distractor wastes capacity.
+        """
+        h = len(latents) - 1
+        loss = obs_seq.new_zeros((), dtype=torch.float32)
+        for k in range(1, h + 1):
+            recon = self.decode(latents[k])
+            target = obs_seq[k].float() / 255.0 - 0.5
+            loss = loss + (self.cfg.rho**k) * F.mse_loss(recon, target)
+        return loss
 
     def reward_grounding_loss(
         self,

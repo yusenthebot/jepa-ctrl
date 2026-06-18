@@ -14,6 +14,8 @@ class ModelConfig:
 
     obs_dim: int
     act_dim: int
+    encoder_type: str = "mlp"  # "mlp" (default, state input) | "cnn" (pixel frame-stack)
+    obs_shape: tuple[int, int, int] | None = None  # (C,H,W) required when encoder_type=="cnn"
     latent_dim: int = 256
     simnorm_groups: int = 8
     horizon: int = 5
@@ -35,6 +37,10 @@ class ModelConfig:
     def __post_init__(self) -> None:
         if self.latent_norm not in ("simnorm", "none"):
             raise ValueError(f"latent_norm must be 'simnorm' or 'none', got {self.latent_norm!r}")
+        if self.encoder_type not in ("mlp", "cnn"):
+            raise ValueError(f"encoder_type must be 'mlp' or 'cnn', got {self.encoder_type!r}")
+        if self.encoder_type == "cnn" and self.obs_shape is None:
+            raise ValueError("encoder_type 'cnn' requires obs_shape=(C,H,W)")
         if self.latent_dim % self.simnorm_groups != 0:
             raise ValueError(
                 f"latent_dim {self.latent_dim} not divisible by "

@@ -58,6 +58,118 @@ class Encoder(nn.Module):
         return self.simnorm(self.pre_simnorm(obs))
 
 
+class CNNEncoder(nn.Module):
+    """Pixel f_theta: DrQ / TD-MPC2-style conv tower -> Linear -> latent, then latent_norm.
+
+    obs_shape = (C, H, W) of a stacked uint8 frame stack (e.g. (9, 84, 84) for k=3 RGB). The
+    uint8 -> float normalization (x/255 - 0.5) happens INSIDE forward/pre_simnorm so the buffer
+    can store raw uint8. Four 3x3 conv layers (32 ch, stride 2 then 1,1,1) + ReLU, flatten, a
+    Linear to latent_dim, then the SAME latent_norm switch as the MLP Encoder. Exposes
+    pre_simnorm() so WorldModel can use it interchangeably with Encoder (the predictor adds its
+    residual delta in pre-norm space). Accepts uint8 OR float input.
+    """
+
+    def __init__(
+        self,
+        obs_shape: tuple[int, int, int],
+        latent_dim: int,
+        channels: int = 32,
+        simnorm_groups: int = 8,
+        latent_norm: str = "simnorm",
+    ) -> None:
+        super().__init__()
+        c, h, w = obs_shape
+        self.obs_shape = (int(c), int(h), int(w))
+        self.convs = nn.Sequential(
+            nn.Conv2d(c, channels, 3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+        )
+        with torch.no_grad():
+            n_flat = self.convs(torch.zeros(1, c, h, w)).flatten(1).shape[1]
+        self.proj = nn.Linear(n_flat, latent_dim)
+        self.simnorm = _latent_norm(latent_norm, simnorm_groups)
+
+    def _normalize(self, obs: torch.Tensor) -> torch.Tensor:
+        """uint8 (or any) pixel input -> centered float in [-0.5, 0.5]."""
+        return obs.float() / 255.0 - 0.5
+
+    def pre_simnorm(self, obs: torch.Tensor) -> torch.Tensor:
+        x = self._normalize(obs)
+        h = self.convs(x).flatten(1)
+        return self.proj(h)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.simnorm(self.pre_simnorm(obs))
+
+
+class Decoder(nn.Module):
+    """Pixel decoder (RECONSTRUCTION baseline only): transpose-conv mirror of CNNEncoder.
+
+    latent -> Linear -> conv feature map -> transpose-conv tower -> reconstructed frames in
+    [-0.5, 0.5] (the SAME centered space the CNNEncoder normalizes uint8 pixels into, so the
+    recon MSE is computed against `obs/255 - 0.5`). This Dreamer-style observation model is
+    built ONLY for the reconstruction arm — the JEPA arm (latent consistency) never owns one.
+
+    The transpose stack reverses the encoder's (stride 2, 1, 1, 1) conv tower: three stride-1
+    transpose convs then one stride-2 transpose conv, with `output_padding` solved so the
+    output spatial size matches obs_shape exactly (works for arbitrary H, W, not just 84).
+    """
+
+    def __init__(
+        self,
+        latent_dim: int,
+        obs_shape: tuple[int, int, int] = (9, 84, 84),
+        channels: int = 32,
+    ) -> None:
+        super().__init__()
+        c, h, w = obs_shape
+        self.obs_shape = (int(c), int(h), int(w))
+        # probe the encoder conv tower to recover its output feature-map size (kernel/stride
+        # arithmetic mirrored): four 3x3 convs, the first stride 2 then three stride 1.
+        with torch.no_grad():
+            probe = nn.Sequential(
+                nn.Conv2d(c, channels, 3, stride=2),
+                nn.Conv2d(channels, channels, 3, stride=1),
+                nn.Conv2d(channels, channels, 3, stride=1),
+                nn.Conv2d(channels, channels, 3, stride=1),
+            )(torch.zeros(1, c, h, w))
+        _, _, fh, fw = probe.shape
+        self.feat_shape = (channels, int(fh), int(fw))
+        # after the three stride-1 transpose convs the map grows by +2 each (kernel 3, pad 0)
+        mid_h, mid_w = fh + 6, fw + 6
+        # the final stride-2 transpose conv: out = (mid-1)*2 + 3 + output_padding; solve for it
+        out_pad_h = h - ((mid_h - 1) * 2 + 3)
+        out_pad_w = w - ((mid_w - 1) * 2 + 3)
+        if not (0 <= out_pad_h <= 1 and 0 <= out_pad_w <= 1):
+            raise ValueError(f"cannot mirror obs_shape {obs_shape} with this conv tower")
+        self.proj = nn.Linear(latent_dim, channels * fh * fw)
+        self.deconvs = nn.Sequential(
+            nn.ConvTranspose2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(channels, channels, 3, stride=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(
+                channels, c, 3, stride=2, output_padding=(out_pad_h, out_pad_w)
+            ),
+        )
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        """z: (..., latent_dim) -> reconstructed frames (..., C, H, W) centered in [-0.5, 0.5]."""
+        lead = z.shape[:-1]
+        ch, fh, fw = self.feat_shape
+        h = self.proj(z).reshape(-1, ch, fh, fw)
+        img = self.deconvs(h)
+        return img.reshape(*lead, *self.obs_shape)
+
+
 class Predictor(nn.Module):
     """g_phi: action head A(a) -> action_head_dim (never raw action scalars); body
     Linear(latent + a_dim) -> Mish -> Linear(hidden) -> Mish -> Linear(latent) predicts a delta

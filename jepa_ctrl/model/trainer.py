@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .buffer import ReplayBuffer
+from .buffer import PixelReplayBuffer, ReplayBuffer
 from .mppi import MPPIConfig, MPPIPlanner, train_mppi
 from .sigreg import sigreg_loss
 from .world_model import WorldModel
@@ -16,18 +16,27 @@ class TrainConfig:
     """Immutable training config. Coefficients follow the locked architecture: consistency
     dominates (20), reward/value grounding is subordinate (0.1 each).
 
-    `grounding` selects the anti-collapse signal for the 3-arm GROUNDLESS ablation:
-      - "reward" (default, R3 positive control): reward/value gradients reach the encoder.
+    `grounding` selects the anti-collapse signal for the GROUNDLESS ablation + the distractor
+    reconstruction head-to-head:
+      - "reward" (default, R3 positive control): reward/value gradients reach the encoder. With
+        the CNN encoder and NO decoder this is the JEPA arm of the distractor head-to-head =
+        latent consistency + reward grounding (the model the reconstruction arm is matched to).
       - "inverse_dynamics": id_coef * inverse-dynamics on the shared rolled latents grounds the
         encoder/predictor; reward & value heads still train but on DETACHED latents (no gradient
         to encoder/predictor) -> a genuinely REWARD-FREE representation, still plannable by MPPI.
       - "sigreg": sigreg_coef * SIGReg on the RAW online latents (use latent_norm="none"); reward
         & value likewise trained on DETACHED latents. SIGReg replaces SimNorm+EMA as the pressure.
+      - "reconstruction": consistency is REPLACED by recon_coef * pixel reconstruction (a
+        Dreamer-style decoder; predicted latents must reconstruct future frames). reward+value
+        grounding is byte-identical to the "reward" arm, so the ONLY difference vs the JEPA arm
+        is consistency <-> reconstruction. The decoder wastes capacity modeling a time-varying
+        background distractor — the failure a reconstruction model structurally cannot avoid.
     """
 
-    grounding: str = "reward"  # "reward" | "inverse_dynamics" | "sigreg"
+    grounding: str = "reward"  # "reward" | "inverse_dynamics" | "sigreg" | "reconstruction"
     id_coef: float = 1.0  # inverse-dynamics grounding weight (inverse_dynamics arm)
     sigreg_coef: float = 1.0  # SIGReg grounding weight (sigreg arm)
+    recon_coef: float = 1.0  # pixel reconstruction weight (reconstruction arm)
     freeze_repr: bool = False  # red-team: freeze repr at random init; only rv heads learn
     lr: float = 3e-4
     enc_lr_scale: float = 0.3
@@ -81,6 +90,15 @@ class Trainer:
         self.device = torch.device(device)
         self.model = model.to(self.device)
         self.cfg = cfg
+        if cfg.grounding == "reconstruction" and self.model.decoder is None:
+            # the reconstruction arm OWNS a decoder; the Trainer builds it (and includes its
+            # params in the optimizer below) so the JEPA arm can stay decoder-free by default.
+            mcfg = self.model.cfg
+            if mcfg.encoder_type != "cnn" or mcfg.obs_shape is None:
+                raise ValueError("reconstruction grounding requires a CNN encoder + obs_shape")
+            from .nets import Decoder
+
+            self.model.decoder = Decoder(mcfg.latent_dim, mcfg.obs_shape).to(self.device)
         if cfg.freeze_repr:  # red-team: representation stays at random init; only rv heads learn
             for mod in (self.model.encoder, self.model.predictor):
                 for p in mod.parameters():
@@ -91,7 +109,18 @@ class Trainer:
         self.planner = MPPIPlanner(
             self.model, self.mppi_cfg, self.act_low, self.act_high, self.device
         )
-        self.buffer = ReplayBuffer(cfg.capacity, model.cfg.obs_dim, model.cfg.act_dim, self.device)
+        # pixel encoder -> uint8 frame buffer (frame-stacked on sample); state encoder -> flat
+        # buffer. update() only consumes sample_subtraj(), whose interface is identical.
+        if model.cfg.encoder_type == "cnn":
+            mc = model.cfg
+            c = mc.obs_shape[0] // 3  # k-frame stack of RGB -> single-frame channel count
+            self.buffer = PixelReplayBuffer(
+                cfg.capacity, (3, mc.obs_shape[1], mc.obs_shape[2]), mc.act_dim, c, self.device
+            )
+        else:
+            self.buffer = ReplayBuffer(
+                cfg.capacity, model.cfg.obs_dim, model.cfg.act_dim, self.device
+            )
         self.opt = torch.optim.Adam(_param_groups(model, cfg))
         self.step = 0
 
@@ -156,13 +185,18 @@ class Trainer:
         obs_seq, action_seq, reward_seq = traj["obs_seq"], traj["action_seq"], traj["reward"]
         done0 = torch.zeros(cfg.batch_size, dtype=torch.bool, device=self.device)
 
-        # one open-loop rollout shared by consistency + grounding (the predictor rolls ONCE)
+        # one open-loop rollout shared by consistency/reconstruction + grounding (rolls ONCE)
         latents = self.model.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
-        consistency = (
-            latents[0].new_zeros(())
-            if cfg.freeze_repr  # frozen-repr control: no representation learning at all
-            else self.model.consistency_loss_from(obs_seq, action_seq, latents)
-        )
+        recon_arm = cfg.grounding == "reconstruction"
+        # reconstruction arm REPLACES latent consistency with pixel reconstruction; both are
+        # skipped under the frozen-repr red-team control (no representation learning at all).
+        if cfg.freeze_repr:
+            repr_loss = latents[0].new_zeros(())
+        elif recon_arm:
+            repr_loss = self.model.reconstruction_loss(obs_seq, latents)
+        else:
+            repr_loss = self.model.consistency_loss_from(obs_seq, action_seq, latents)
+        repr_coef = mcfg.consistency_coef if not recon_arm else cfg.recon_coef
 
         reward_free = cfg.grounding in ("inverse_dynamics", "sigreg")
         # reward-free arms detach the latents under the rv heads so NO rv gradient reaches the
@@ -173,12 +207,12 @@ class Trainer:
         v_tgt = self._value_target(obs_seq[1], action_seq[1], reward_seq[0], done0)
         v_loss = self.model.value_loss(rv_latents[0], action_seq[0], v_tgt)
 
-        loss = mcfg.consistency_coef * consistency + mcfg.rv_coef * (r_loss + v_loss)
+        loss = repr_coef * repr_loss + mcfg.rv_coef * (r_loss + v_loss)
         metrics = {
-            "consistency": float(consistency.detach()),
             "reward": float(r_loss.detach()),
             "value": float(v_loss.detach()),
         }
+        metrics["reconstruction" if recon_arm else "consistency"] = float(repr_loss.detach())
 
         if not cfg.freeze_repr and cfg.grounding == "inverse_dynamics":
             id_loss = self.model.inverse_dynamics_loss(action_seq, latents)
