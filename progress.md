@@ -179,6 +179,18 @@ probe) so the representation is **genuinely reward-free**; MPPI still plans with
 - **Builds on:** existing WorldModel/MPPI/metrics verbatim; adds an inverse-dyn head + SIGReg loss +
   arm flag + detach. ~20min/run; full 3-arm × 3-seed matrix is an overnight serialized loop.
 
+### GROUNDLESS R1 result (2026-06-18, PRELIMINARY — pending red-team)
+cheetah-run @100k, cross-seed (0,1,2):
+- **SIGReg (reward-free): 387 ± 87** [457, 290, 415] — **CLEARS the ≥365 bar**, ~74% of reward-grounded.
+  All 3 seeds gallop (render confirmed). obs_corr rising (s0 0.46; mean ~0.32 — the >0.4 sub-criterion
+  is only partly met, reported honestly). ⇒ a TASK-AGNOSTIC distributional constraint replaces reward.
+- **inverse-dynamics (reward-free): 31 ± 24** — COLLAPSED (obs_corr ~0). Action-from-latent does NOT
+  prevent collapse here. Sharp contrast: not any self-supervised signal works — the distributional one does.
+- Controls: reward 522 ± 139 (positive); consistency-only 138 (negative, R2).
+- **RED-TEAM IN PROGRESS** (be1ekgybn): matched consistency-only (sigreg_coef=0) must collapse to
+  prove SIGReg is causal; frozen-random-repr+planning must fail to prove the learned latent matters.
+  Headline NOT recorded as confirmed until these clear.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors

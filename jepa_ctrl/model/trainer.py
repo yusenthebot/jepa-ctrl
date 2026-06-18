@@ -28,7 +28,7 @@ class TrainConfig:
     grounding: str = "reward"  # "reward" | "inverse_dynamics" | "sigreg"
     id_coef: float = 1.0  # inverse-dynamics grounding weight (inverse_dynamics arm)
     sigreg_coef: float = 1.0  # SIGReg grounding weight (sigreg arm)
-    freeze_repr: bool = False  # red-team: freeze encoder+predictor at random init; only rv heads learn
+    freeze_repr: bool = False  # red-team: freeze repr at random init; only rv heads learn
     lr: float = 3e-4
     enc_lr_scale: float = 0.3
     batch_size: int = 256
