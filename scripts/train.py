@@ -28,9 +28,21 @@ from jepa_ctrl.model.trainer import TrainConfig, Trainer
 from jepa_ctrl.render import contact_sheet, save_mp4
 from jepa_ctrl.seeding import set_seed
 
+_PIXELS = {"on": False, "distractor": False, "size": 84, "frame_stack": 3}
+
+
+def make_env(task: str, seed: int, action_repeat: int):
+    """DMCEnv (state) or PixelDMCEnv (pixels + optional background distractor) per module config."""
+    if _PIXELS["on"]:
+        from jepa_ctrl.pixel_env import PixelDMCEnv
+        return PixelDMCEnv(task, seed=seed, action_repeat=action_repeat, size=_PIXELS["size"],
+                           frame_stack=_PIXELS["frame_stack"], distractor=_PIXELS["distractor"],
+                           distractor_seed=seed + 7)
+    return DMCEnv(task, seed=seed, action_repeat=action_repeat)
+
 
 def run_eval(model, task, n_episodes, seed, device, action_repeat, render=False, out=None, step=0):
-    env = DMCEnv(task, seed=seed, action_repeat=action_repeat)
+    env = make_env(task, seed, action_repeat)
     ctrl = JepaController(model, env.act_low, env.act_high, eval_mppi(), device)
     returns, frames, cum = [], [], []
     try:
@@ -69,7 +81,7 @@ def collapse_probe(model, task, seed, device, action_repeat, n=256) -> dict:
     tracks the observation (obs_latent_corr ~0 means the encoder ignores its input)."""
     import numpy.linalg as la
 
-    env = DMCEnv(task, seed=seed, action_repeat=action_repeat)
+    env = make_env(task, seed, action_repeat)
     rng = np.random.default_rng(seed)
     try:
         obs, o = [], env.reset()
@@ -87,8 +99,9 @@ def collapse_probe(model, task, seed, device, action_repeat, n=256) -> dict:
             r_mag = float(model.reward_head.to_scalar(model.reward_head.logits(z, a0)).abs().mean())
             v_mag = float(model.value_head.to_scalar(model.value_head.logits(z, a0)).abs().mean())
         diag = collapse_diagnostics(Z)
-        i, j = rng.integers(0, len(ob), (2, 200))
-        od = la.norm(ob[i] - ob[j], axis=1)
+        obf = ob.reshape(len(ob), -1)  # flatten (pixel obs is 4D); NB pixel-dist is distractor-
+        i, j = rng.integers(0, len(ob), (2, 200))  # dominated, so obs_corr is unreliable here
+        od = la.norm(obf[i] - obf[j], axis=1)
         zd = la.norm(Z[i] - Z[j], axis=1)
         corr = float(np.corrcoef(od, zd)[0, 1])
     finally:
@@ -116,14 +129,19 @@ def main() -> None:
     p.add_argument("--action-repeat", type=int, default=2)
     p.add_argument("--latent-dim", type=int, default=0, help="0 = auto (256 if obs>8 else 128)")
     p.add_argument("--grounding", default="reward",
-                   choices=["reward", "inverse_dynamics", "sigreg"],
-                   help="GROUNDLESS arm; inverse_dynamics/sigreg are reward-free")
+                   choices=["reward", "inverse_dynamics", "sigreg", "reconstruction"],
+                   help="reward/recon = grounded; inverse_dynamics/sigreg are reward-free")
     p.add_argument("--latent-norm", default="auto", choices=["auto", "simnorm", "none"],
                    help="auto = none for sigreg arm else simnorm; override for matched ablations")
     p.add_argument("--sigreg-coef", type=float, default=1.0)
     p.add_argument("--id-coef", type=float, default=1.0)
     p.add_argument("--freeze-repr", action="store_true",
                    help="red-team control: freeze random repr, train only reward/value heads")
+    p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
+    p.add_argument("--distractor", action="store_true",
+                   help="composite a time-varying background distractor (pixels only)")
+    p.add_argument("--size", type=int, default=84)
+    p.add_argument("--frame-stack", type=int, default=3)
     p.add_argument("--device", default="cuda")
     p.add_argument("--outdir", default="runs/train")
     a = p.parse_args()
@@ -133,15 +151,23 @@ def main() -> None:
     out = Path(a.outdir)
     out.mkdir(parents=True, exist_ok=True)
 
-    env = DMCEnv(a.task, seed=a.seed, action_repeat=a.action_repeat)
-    latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
+    _PIXELS.update(on=a.pixels, distractor=a.distractor, size=a.size, frame_stack=a.frame_stack)
+    env = make_env(a.task, a.seed, a.action_repeat)
     latent_norm = a.latent_norm if a.latent_norm != "auto" else (
         "none" if a.grounding == "sigreg" else "simnorm")  # SIGReg needs RAW; else override-able
-    mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
-                       latent_norm=latent_norm)
+    if a.pixels:
+        latent_dim = a.latent_dim or 256
+        mcfg = ModelConfig(obs_dim=int(np.prod(env.obs_shape)), act_dim=env.act_dim,
+                           latent_dim=latent_dim, latent_norm=latent_norm,
+                           encoder_type="cnn", obs_shape=tuple(int(x) for x in env.obs_shape))
+    else:
+        latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
+        mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
+                           latent_norm=latent_norm)
     wm = WorldModel(mcfg)
     tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding,
-                       sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr)
+                       sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr,
+                       capacity=50_000 if a.pixels else 1_000_000)  # stacked uint8 buffer ~6.3GB
     trainer = Trainer(wm, tcfg, env.act_low, env.act_high, device=device)
     nparam = sum(q.numel() for q in wm.parameters() if q.requires_grad) / 1e6
     print(f"device={device} task={a.task} grounding={a.grounding} "
@@ -178,11 +204,13 @@ def main() -> None:
             trainer.planner.reset()
         if len(trainer.buffer) > mcfg.horizon + 1 and trainer.step >= a.seed_steps:
             for _ in range(a.updates_per_step):
-                losses.append(trainer.update()["consistency"])
+                mtr = trainer.update()
+                # representation loss key varies by arm (consistency | reconstruction)
+                losses.append(mtr.get("consistency", mtr.get("reconstruction", mtr["loss"])))
         if trainer.step % a.eval_every == 0:
             eval_hook(trainer.step)
         if trainer.step % 200 == 0 and losses:
-            print(f"  step {trainer.step:6d}  consistency(mean200) {np.mean(losses[-200:]):.4f}",
+            print(f"  step {trainer.step:6d}  repr_loss(mean200) {np.mean(losses[-200:]):.4f}",
                   flush=True)
 
     # post-seed wall-clock + 100k ETA

@@ -93,9 +93,11 @@ class MPPIPlanner:
 
     @torch.no_grad()
     def plan(self, obs: torch.Tensor) -> torch.Tensor:
-        """obs: (obs_dim,) or (1, obs_dim). Returns the first action (act_dim,), clamped."""
+        """obs: unbatched state (obs_dim,) or pixel (C,H,W) — returns first action (act_dim,)."""
         cfg = self.cfg
-        obs = obs.reshape(1, -1).to(self.device, torch.float32)
+        obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+        if obs.ndim in (1, 3):  # add batch dim; keep (C,H,W) intact for the CNN encoder
+            obs = obs.unsqueeze(0)
         z0_pre = self.model.encode_pre(obs).expand(cfg.num_samples, -1).contiguous()
 
         h, ad = cfg.horizon, self.act_dim

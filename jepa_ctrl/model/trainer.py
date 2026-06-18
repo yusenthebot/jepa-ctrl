@@ -113,9 +113,10 @@ class Trainer:
         # buffer. update() only consumes sample_subtraj(), whose interface is identical.
         if model.cfg.encoder_type == "cnn":
             mc = model.cfg
-            c = mc.obs_shape[0] // 3  # k-frame stack of RGB -> single-frame channel count
+            # the env already frame-stacks; store the FULL stacked obs as one frame (frame_stack=1)
+            # to avoid a redundant re-stack and the env/buffer single-frame interface mismatch.
             self.buffer = PixelReplayBuffer(
-                cfg.capacity, (3, mc.obs_shape[1], mc.obs_shape[2]), mc.act_dim, c, self.device
+                cfg.capacity, tuple(mc.obs_shape), mc.act_dim, 1, self.device
             )
         else:
             self.buffer = ReplayBuffer(
