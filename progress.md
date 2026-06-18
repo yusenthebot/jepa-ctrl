@@ -204,8 +204,11 @@ for reward-free locomotion control**: 493 cross-seed, no SimNorm / SIGReg / rewa
 R2's "pure consistency collapses; reward required" was a **SimNorm artifact** — the simplex lets the
 encoder collapse to a point under reward-free consistency; an un-normalized latent with EMA/stop-grad
 does not. The load-bearing variable is the **latent parameterization**, not the grounding signal.
-Caveat (honest): reward-arm used SimNorm vs consistency-only raw — a matched reward-on-raw run is the
-clean follow-up. Status: 2 seeds (524/462) + gallop render confirmed; seed 2 running for cross-seed.
+Caveat (honest): reward-arm used SimNorm vs consistency-only raw — matched reward-on-raw run is the
+clean follow-up (running). **Cross-seed CONFIRMED: consistency-only RAW = 496 ± 31** (524/462/501),
+gallop rendered, obs_corr 0.34–0.57 — and LOWER variance than reward-grounded (±31 vs ±139).
+Matched 2×2 raw-vs-SimNorm attribution running (b4ojqc7d6): predicts consistency-only-SimNorm
+collapses (~138) while consistency-only-raw works (496) ⇒ latent parameterization is load-bearing.
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
