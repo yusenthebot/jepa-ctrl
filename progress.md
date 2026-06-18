@@ -37,6 +37,7 @@ random baseline real-verified in the live simulator. **No model yet** (that is r
 | R3 | cheetah-run | JEPA-MPPI 100k +grounding-fix | **0,1,2** | **522 ± 139** | **RUNG 0 MET CROSS-SEED.** Grounding fix (full-rollout reward + SARSA value bootstrap) → 138→557 (4×). Per-seed [557, 369, 640], all ≫ random 6.7; visible RUNNING GAIT (render confirmed). ~20min/100k. `is_collapsed` recalibrated to absolute eff-rank floor (the fraction-of-d rule was a false-alarm artifact, verified on the real model). |
 | R5 | reacher-easy | JEPA-MPPI 100k | 0 | 22 (**peak 949@80k**) | **GENERALIZES but UNSTABLE** — nearly SOLVED reacher (949@80k, ~960=solved) then catastrophically DIVERGED to 20 by 100k. Training stability is the new bottleneck. |
 | R5 | walker-walk | JEPA-MPPI 100k | 0 | 227 (peak 419) | partial control (random ~45); noisy/unstable across evals. |
+| R6 | reacher-easy | JEPA-MPPI 100k + explore-anneal | 0,1,2 | ~752 (744/904/608) | STABILITY FIX: anneal explore_std 0.3→0.05 → no more 949→20 crash, controls cross-seed. Value-divergence hypothesis **REFUTED** (v_mag stayed ≤4.1); real cause was variance/oscillation. |
 
 (Baselines only; these are the "did nothing" floor the learned controller must beat.)
 
@@ -62,7 +63,10 @@ TD-MPC2-grounded). ~1M params, all-MLP, no decoder.
 
 ## Frontier ladder (## Frontier — ambition horizon)
 
-Current ceiling: **JEPA-MPPI RUNS cheetah-run — 522 ± 139 @100k CROSS-SEED (0,1,2), visible gallop. RUNG 0 MET.** The core bet (laptop-scale action-conditioned JEPA + latent MPPI controls a sim robot) is validated. Next: RUNG 1 (walker/reacher, harder dynamics) + the TD-MPC2 head-to-head; and push cheetah further (more steps → toward ~772). Escalation in *kind*:
+Current ceiling: **RUNG 0 solid — cheetah 522±139 + reacher ~752 cross-seed, visible gait.** Core
+bet validated. **STRATEGIC PIVOT (Yusen, 2026-06-18): stop reproducing TD-MPC2; pursue FRONTIER
+breakthroughs only** — see the ⭐ FRONTIER PIVOT section below (active bet: GROUNDLESS). The old
+physical ladder below remains the long-horizon path; the frontier ladder is now the spine.
 0. **RUNG 0 (floor) — DONE for cheetah-run (522±139 cross-seed, visible gallop); reacher in
    RUNG 1.** Thesis answered: reward grounding is REQUIRED — pure-consistency-dominant collapses;
    full-rollout reward grounding + SARSA value bootstrap fixes it (138→557).
@@ -144,15 +148,47 @@ UNSTABLE. reacher-easy nearly SOLVED (949@80k) then catastrophically diverged to
 walker-walk partial (peak 419, final 227, noisy). Generalization confirmed; **training stability
 is the new bottleneck.**
 
-**Round 6 (next) — STABILITY (the new bottleneck):**
-1. Diagnose the reacher 949→20 divergence (Debug Protocol). Leading hypotheses: value
-   OVERESTIMATION / divergence (the SARSA bootstrap + ensemble may need stronger target
-   stabilization, value clipping, or a slower value LR); representation drift late in training;
-   or replay non-stationarity. Add per-update value-loss + value-magnitude logging to catch it.
-2. Likely fixes to try (ablate): lower value LR / stronger Polyak (value_tau), reward/value
-   normalization, longer EMA target horizon, or a learned policy prior to stabilize the bootstrap.
-3. THEN resume RUNG 1: cross-seed reacher + walker once stable; pull TD-MPC2 per-task DMC numbers
-   for the head-to-head; push cheetah to 300k–500k toward ~772.
+**Round 6 (DONE 2026-06-18) — STABILITY:** Debug Protocol REFUTED the value-divergence hypothesis
+— value magnitude stayed bounded (≤4.1) and the reacher rerun reached 987 and HELD through 120k;
+the R5 "949→20" was a high-variance dip (constant explore_std=0.3 thrashing a near-solved policy +
+GPU nondeterminism), not a systematic blow-up. Fix = anneal explore_std 0.3→0.05. Result: reacher
+cross-seed ~752 (744/904/608), no crashes. Floor solid.
+
+---
+
+## ⭐ FRONTIER PIVOT (2026-06-18, Yusen directive: "frontier breakthroughs, not reproduction")
+
+"Match TD-MPC2 on cheetah-run" is reproduction and is now BANNED as a goal. Every round forward
+must earn JEPA's keep — do something a reconstruction/reward world model **structurally cannot**.
+
+### Active bet — GROUNDLESS (Frontier round 1)
+*What minimally REPLACES reward as the JEPA anti-collapse grounding?* A controlled 3-arm head-to-head
+on identical infra: **A = consistency + inverse-dynamics** (action-from-latent), **B = consistency +
+SIGReg** (LeJEPA isotropic-Gaussian latent regularizer, raw latent), **C = consistency + reward**
+(R3 positive control). In A & B the reward/value heads are trained on DETACHED latents (post-hoc
+probe) so the representation is **genuinely reward-free**; MPPI still plans with them.
+- **Breakthrough claim:** a task-AGNOSTIC self-supervised signal replaces task reward as the
+  collapse-preventer → one reward-free JEPA latent that re-plans arbitrary test-time rewards.
+- **Why frontier not reproduction:** opposite of TD-MPC2/Dreamer (need reward); SIGReg/LeJEPA is
+  image-SSL never tested in an action-conditioned world model; no published 3-way ablation in a
+  decoder-free MPPI planner on dm_control locomotion from scratch. Tests our own R2/R3 finding with
+  a 2025 tool that didn't exist when we found it.
+- **Falsifiable success:** a reward-free arm reaches ≥365 cheetah-run (≥70% of 522) cross-seed AND
+  keeps obs_latent_corr>0.4 + eff_rank above floor through 100k, while consistency-only collapses.
+  A clean NEGATIVE (both reward-free arms collapse) is also publishable — it bounds task-agnostic grounding.
+- **Builds on:** existing WorldModel/MPPI/metrics verbatim; adds an inverse-dyn head + SIGReg loss +
+  arm flag + detach. ~20min/run; full 3-arm × 3-seed matrix is an overnight serialized loop.
+
+### Frontier ladder (escalation in KIND — the new spine)
+1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
+2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
+   that collapse a reconstruction baseline (Distracting Control Suite, pixels). The clearest "JEPA
+   does what Dreamer can't" demo.
+3. **Latent-disagreement intrinsic motivation**: ensemble disagreement in latent space → crack
+   sparse / hard-exploration tasks reward-MPC fails on.
+4. **Temporal-abstraction JEPA**: predict far-future latents directly → long-horizon planning where
+   1-step rollouts drift.
+5. (then the prior physical ladder: pixels → goal-image → manipulation → frozen V-JEPA enc → sim2real.)
 
 ## Open questions
 - Does pure latent-consistency (no reward grounding) avoid collapse on DMC state with
