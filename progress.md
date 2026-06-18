@@ -222,6 +222,24 @@ reward-grounded-raw 438). **Frontier finding, red-teamed + fully attributed:** a
 (multi-step consistency, EMA+stop-grad, NO decoder, NO reward) gives reward-free cheetah control at
 496±31 — the cleanest reward-free result, and it overturns our own earlier conclusion. GROUNDLESS done.
 
+### R8 — Distractor robustness pilot (2026-06-18): INCONCLUSIVE / underpowered (honest)
+Pixel cheetah-run @45k, seed 0, 2×2 JEPA(reward,no-decoder) vs Reconstruction(decoder), clean vs distractor:
+
+| arm | clean | distractor | drop |
+|-----|-------|-----------|------|
+| JEPA | 184 | 75 | 109 (59%) |
+| Reconstruction | 51 | 34 | 17 (33%) |
+
+**Hypothesis NOT supported at this scale.** The relative drop went the "wrong" way, but the cause is
+UNDERPOWERING: at 45k pixel steps the reconstruction arm barely learned (51 clean ≈ noise floor; vs
+state-based 522), so its small distractor drop is uninformative — you can't show "recon craters under
+distractors" when recon never learned clean control. Eyes-on: even pixel-JEPA-clean (184) only weakly
+controls (shuffles, then tips). The pixel rung is COMPUTE-BOUND on the laptop (recon decoder ~2× slower;
+100k pushes >2h). Mild confounded signal: pixel-JEPA learns ~3.6× better than pixel-recon at low budget
+(184 vs 51). 5 integration bugs were caught+fixed by smokes (env↔buffer, planner flatten, 4D probe, CLI,
+loss key). NEXT: re-run at 64×64 + more steps so both arms reach a real clean baseline before judging
+robustness; if still inconclusive, this rung needs compute beyond a clean laptop 2h run.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
