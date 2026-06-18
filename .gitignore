@@ -21,3 +21,6 @@ setup.log
 
 # --- os ---
 .DS_Store
+
+# committed demo assets for the README (override the *.gif/*.png media ignores above)
+!docs/**
