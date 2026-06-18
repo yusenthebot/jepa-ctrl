@@ -118,6 +118,10 @@ def main() -> None:
     p.add_argument("--grounding", default="reward",
                    choices=["reward", "inverse_dynamics", "sigreg"],
                    help="GROUNDLESS arm; inverse_dynamics/sigreg are reward-free")
+    p.add_argument("--sigreg-coef", type=float, default=1.0)
+    p.add_argument("--id-coef", type=float, default=1.0)
+    p.add_argument("--freeze-repr", action="store_true",
+                   help="red-team control: freeze random repr, train only reward/value heads")
     p.add_argument("--device", default="cuda")
     p.add_argument("--outdir", default="runs/train")
     a = p.parse_args()
@@ -133,7 +137,8 @@ def main() -> None:
     mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
                        latent_norm=latent_norm)
     wm = WorldModel(mcfg)
-    tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding)
+    tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding,
+                       sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr)
     trainer = Trainer(wm, tcfg, env.act_low, env.act_high, device=device)
     nparam = sum(q.numel() for q in wm.parameters() if q.requires_grad) / 1e6
     print(f"device={device} task={a.task} grounding={a.grounding} "

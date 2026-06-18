@@ -28,6 +28,7 @@ class TrainConfig:
     grounding: str = "reward"  # "reward" | "inverse_dynamics" | "sigreg"
     id_coef: float = 1.0  # inverse-dynamics grounding weight (inverse_dynamics arm)
     sigreg_coef: float = 1.0  # SIGReg grounding weight (sigreg arm)
+    freeze_repr: bool = False  # red-team: freeze encoder+predictor at random init; only rv heads learn
     lr: float = 3e-4
     enc_lr_scale: float = 0.3
     batch_size: int = 256
@@ -53,10 +54,11 @@ def _param_groups(model: WorldModel, cfg: TrainConfig) -> list[dict]:
         if not p.requires_grad:
             continue
         (enc if id(p) in enc_ids else rest).append(p)
-    return [
+    groups = [
         {"params": enc, "lr": cfg.lr * cfg.enc_lr_scale},
         {"params": rest, "lr": cfg.lr},
     ]
+    return [g for g in groups if g["params"]]  # drop empty groups (e.g. frozen encoder)
 
 
 class Trainer:
@@ -79,6 +81,10 @@ class Trainer:
         self.device = torch.device(device)
         self.model = model.to(self.device)
         self.cfg = cfg
+        if cfg.freeze_repr:  # red-team: representation stays at random init; only rv heads learn
+            for mod in (self.model.encoder, self.model.predictor):
+                for p in mod.parameters():
+                    p.requires_grad_(False)
         self.mppi_cfg = mppi_cfg or train_mppi()
         self.act_low = torch.as_tensor(act_low, dtype=torch.float32, device=self.device)
         self.act_high = torch.as_tensor(act_high, dtype=torch.float32, device=self.device)
@@ -152,7 +158,11 @@ class Trainer:
 
         # one open-loop rollout shared by consistency + grounding (the predictor rolls ONCE)
         latents = self.model.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
-        consistency = self.model.consistency_loss_from(obs_seq, action_seq, latents)
+        consistency = (
+            latents[0].new_zeros(())
+            if cfg.freeze_repr  # frozen-repr control: no representation learning at all
+            else self.model.consistency_loss_from(obs_seq, action_seq, latents)
+        )
 
         reward_free = cfg.grounding in ("inverse_dynamics", "sigreg")
         # reward-free arms detach the latents under the rv heads so NO rv gradient reaches the
@@ -170,11 +180,11 @@ class Trainer:
             "value": float(v_loss.detach()),
         }
 
-        if cfg.grounding == "inverse_dynamics":
+        if not cfg.freeze_repr and cfg.grounding == "inverse_dynamics":
             id_loss = self.model.inverse_dynamics_loss(action_seq, latents)
             loss = loss + cfg.id_coef * id_loss
             metrics["inverse_dynamics"] = float(id_loss.detach())
-        elif cfg.grounding == "sigreg":
+        elif not cfg.freeze_repr and cfg.grounding == "sigreg":
             online = torch.cat(latents, dim=0)  # ((H+1)*B, d) RAW online latents (grad-coupled)
             sr_loss = sigreg_loss(online, lam=1.0)
             loss = loss + cfg.sigreg_coef * sr_loss
