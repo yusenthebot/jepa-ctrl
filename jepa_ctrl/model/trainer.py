@@ -19,7 +19,9 @@ class TrainConfig:
     enc_lr_scale: float = 0.3
     batch_size: int = 256
     grad_clip: float = 10.0
-    explore_std: float = 0.3  # gaussian action noise added to the MPPI behaviour action
+    explore_std: float = 0.3  # gaussian action noise added to the MPPI behaviour action (start)
+    explore_std_end: float = 0.05  # annealed exploration floor — reduce late-training thrashing
+    explore_anneal_steps: int = 100_000  # linear anneal explore_std -> explore_std_end over this
     seed_steps: int = 1000  # uniform-random warmup before MPPI takes over collection
     ema_tau_start: float = 0.99
     ema_tau_end: float = 0.996
@@ -80,15 +82,22 @@ class Trainer:
         frac = min(1.0, self.step / max(1, c.ema_anneal_steps))
         return c.ema_tau_start + (c.ema_tau_end - c.ema_tau_start) * frac
 
+    def _explore_std(self) -> float:
+        """Linearly anneal exploration noise explore_std -> explore_std_end. Constant high noise
+        thrashes a near-solved policy (R6 finding: reacher oscillated under fixed std=0.3)."""
+        c = self.cfg
+        frac = min(1.0, self.step / max(1, c.explore_anneal_steps))
+        return c.explore_std + (c.explore_std_end - c.explore_std) * frac
+
     # --- behaviour policy ---------------------------------------------------------
     @torch.no_grad()
     def behaviour_action(self, obs: torch.Tensor) -> torch.Tensor:
-        """MPPI action + gaussian exploration noise (uniform random during seed steps)."""
+        """MPPI action + annealed gaussian exploration noise (uniform random during seed steps)."""
         if self.step < self.cfg.seed_steps:
             u = torch.rand(self.model.cfg.act_dim, device=self.device)
             return self.act_low + u * (self.act_high - self.act_low)
         a = self.planner.plan(obs)
-        a = a + self.cfg.explore_std * torch.randn_like(a)
+        a = a + self._explore_std() * torch.randn_like(a)
         return a.clamp(self.act_low, self.act_high)
 
     # --- value/reward targets -----------------------------------------------------
