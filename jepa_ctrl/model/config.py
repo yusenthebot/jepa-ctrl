@@ -30,8 +30,11 @@ class ModelConfig:
     enc_hidden: int = 256
     action_head_dim: int = 64
     pred_hidden: int = 256
+    latent_norm: str = "simnorm"  # "simnorm" (default) | "none" (RAW latent, for the SIGReg arm)
 
     def __post_init__(self) -> None:
+        if self.latent_norm not in ("simnorm", "none"):
+            raise ValueError(f"latent_norm must be 'simnorm' or 'none', got {self.latent_norm!r}")
         if self.latent_dim % self.simnorm_groups != 0:
             raise ValueError(
                 f"latent_dim {self.latent_dim} not divisible by "

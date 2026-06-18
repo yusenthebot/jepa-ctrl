@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .config import ModelConfig
-from .nets import DistHead, Encoder, Predictor, symlog
+from .nets import DistHead, Encoder, InverseDynamicsHead, Predictor, symlog
 
 
 def _ema_update_(target: nn.Module, online: nn.Module, tau: float) -> None:
@@ -34,11 +34,13 @@ class WorldModel(nn.Module):
         ld, ad = cfg.latent_dim, cfg.act_dim
         g = cfg.simnorm_groups
 
-        self.encoder = Encoder(cfg.obs_dim, ld, cfg.enc_hidden, g)
+        ln = cfg.latent_norm
+        self.encoder = Encoder(cfg.obs_dim, ld, cfg.enc_hidden, g, latent_norm=ln)
         self.target_encoder = copy.deepcopy(self.encoder)
         self._freeze(self.target_encoder)
 
-        self.predictor = Predictor(ld, ad, cfg.pred_hidden, cfg.action_head_dim, g)
+        self.predictor = Predictor(ld, ad, cfg.pred_hidden, cfg.action_head_dim, g, latent_norm=ln)
+        self.inverse_dynamics_head = InverseDynamicsHead(ld, ad, cfg.pred_hidden)
 
         self.reward_head = DistHead(ld, ad, cfg.pred_hidden, cfg.bins, cfg.vmin, cfg.vmax, num_q=1)
         self.value_head = DistHead(
@@ -149,6 +151,26 @@ class WorldModel(nn.Module):
             r_logits = self.reward_head.logits(latents[k], action_seq[k])[0]
             r_label = self.reward_head.twohot_encode(symlog(reward_seq[k]))
             loss = loss + -(r_label * F.log_softmax(r_logits, dim=-1)).sum(-1).mean()
+        return loss / h
+
+    def inverse_dynamics_loss(
+        self, action_seq: torch.Tensor, latents: list[torch.Tensor]
+    ) -> torch.Tensor:
+        """Task-AGNOSTIC inverse-dynamics grounding over the SHARED rolled latents.
+
+        action_seq: (H, batch, act_dim). latents: [z_0, z_hat_1, .., z_hat_H] from
+        rollout_latents (length H+1) — latents[k] is the predicted latent of o_{t+k}. For each
+        step k=0..H-1 the head predicts action_seq[k] (= a_{t+k}) from (latents[k], latents[k+1]);
+        the MSE gradient therefore flows into BOTH the encoder (via z_0) and the predictor (via
+        every z_hat), making the latent action-discriminative on the PREDICTED dynamics. This is
+        the anti-collapse signal that REPLACES task reward in the inverse-dynamics arm.
+        Returns the mean over k.
+        """
+        h = action_seq.shape[0]
+        loss = action_seq.new_zeros(())
+        for k in range(h):
+            a_hat = self.inverse_dynamics_head(latents[k], latents[k + 1])
+            loss = loss + F.mse_loss(a_hat, action_seq[k])
         return loss / h
 
     def value_loss(

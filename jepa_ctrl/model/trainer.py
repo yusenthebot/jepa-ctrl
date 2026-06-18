@@ -7,14 +7,27 @@ import torch
 
 from .buffer import ReplayBuffer
 from .mppi import MPPIConfig, MPPIPlanner, train_mppi
+from .sigreg import sigreg_loss
 from .world_model import WorldModel
 
 
 @dataclass(frozen=True)
 class TrainConfig:
     """Immutable training config. Coefficients follow the locked architecture: consistency
-    dominates (20), reward/value grounding is subordinate (0.1 each)."""
+    dominates (20), reward/value grounding is subordinate (0.1 each).
 
+    `grounding` selects the anti-collapse signal for the 3-arm GROUNDLESS ablation:
+      - "reward" (default, R3 positive control): reward/value gradients reach the encoder.
+      - "inverse_dynamics": id_coef * inverse-dynamics on the shared rolled latents grounds the
+        encoder/predictor; reward & value heads still train but on DETACHED latents (no gradient
+        to encoder/predictor) -> a genuinely REWARD-FREE representation, still plannable by MPPI.
+      - "sigreg": sigreg_coef * SIGReg on the RAW online latents (use latent_norm="none"); reward
+        & value likewise trained on DETACHED latents. SIGReg replaces SimNorm+EMA as the pressure.
+    """
+
+    grounding: str = "reward"  # "reward" | "inverse_dynamics" | "sigreg"
+    id_coef: float = 1.0  # inverse-dynamics grounding weight (inverse_dynamics arm)
+    sigreg_coef: float = 1.0  # SIGReg grounding weight (sigreg arm)
     lr: float = 3e-4
     enc_lr_scale: float = 0.3
     batch_size: int = 256
@@ -122,25 +135,50 @@ class Trainer:
 
     # --- one gradient step --------------------------------------------------------
     def update(self) -> dict[str, float]:
-        """Sample a sub-trajectory + transitions, compute the combined loss, step, EMA."""
+        """Sample a sub-trajectory, compute the arm-gated combined loss, step, EMA.
+
+        Common to every arm: latent consistency on the shared rolled latents. The GROUNDING and
+        the gradient path of the reward/value heads depend on cfg.grounding:
+          - "reward": rv on the SHARED (grad-coupled) latents -> rv grounds the encoder (R3).
+          - "inverse_dynamics"/"sigreg": rv on DETACHED latents -> rv NEVER touches the
+            encoder/predictor (reward-free representation), while the task-agnostic grounding
+            (inverse-dynamics or SIGReg) is the anti-collapse pressure. rv heads still train.
+        """
         cfg, mcfg = self.cfg, self.model.cfg
         h = mcfg.horizon
         traj = self.buffer.sample_subtraj(cfg.batch_size, h)
         obs_seq, action_seq, reward_seq = traj["obs_seq"], traj["action_seq"], traj["reward"]
+        done0 = torch.zeros(cfg.batch_size, dtype=torch.bool, device=self.device)
 
-        # one open-loop rollout shared by consistency + reward grounding
+        # one open-loop rollout shared by consistency + grounding (the predictor rolls ONCE)
         latents = self.model.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
         consistency = self.model.consistency_loss_from(obs_seq, action_seq, latents)
 
-        # reward grounding over the FULL rollout: r(o_{t+k}, a_{t+k}) for k=0..H-1
-        r_loss = self.model.reward_grounding_loss(action_seq, reward_seq, latents)
+        reward_free = cfg.grounding in ("inverse_dynamics", "sigreg")
+        # reward-free arms detach the latents under the rv heads so NO rv gradient reaches the
+        # encoder/predictor; the reward arm keeps them coupled (rv IS the grounding there).
+        rv_latents = [z.detach() for z in latents] if reward_free else latents
 
-        # value grounding at step 0 with a SARSA target using the REAL next action a_{t+1}
-        done0 = torch.zeros(cfg.batch_size, dtype=torch.bool, device=self.device)
+        r_loss = self.model.reward_grounding_loss(action_seq, reward_seq, rv_latents)
         v_tgt = self._value_target(obs_seq[1], action_seq[1], reward_seq[0], done0)
-        v_loss = self.model.value_loss(latents[0], action_seq[0], v_tgt)
+        v_loss = self.model.value_loss(rv_latents[0], action_seq[0], v_tgt)
 
         loss = mcfg.consistency_coef * consistency + mcfg.rv_coef * (r_loss + v_loss)
+        metrics = {
+            "consistency": float(consistency.detach()),
+            "reward": float(r_loss.detach()),
+            "value": float(v_loss.detach()),
+        }
+
+        if cfg.grounding == "inverse_dynamics":
+            id_loss = self.model.inverse_dynamics_loss(action_seq, latents)
+            loss = loss + cfg.id_coef * id_loss
+            metrics["inverse_dynamics"] = float(id_loss.detach())
+        elif cfg.grounding == "sigreg":
+            online = torch.cat(latents, dim=0)  # ((H+1)*B, d) RAW online latents (grad-coupled)
+            sr_loss = sigreg_loss(online, lam=1.0)
+            loss = loss + cfg.sigreg_coef * sr_loss
+            metrics["sigreg"] = float(sr_loss.detach())
 
         self.opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -150,12 +188,8 @@ class Trainer:
         self.opt.step()
         self.model.ema_update(self._enc_tau())
 
-        return {
-            "loss": float(loss.detach()),
-            "consistency": float(consistency.detach()),
-            "reward": float(r_loss.detach()),
-            "value": float(v_loss.detach()),
-        }
+        metrics["loss"] = float(loss.detach())
+        return metrics
 
     # --- collect + train loop -----------------------------------------------------
     def collect_step(self, env, obs: torch.Tensor) -> tuple[torch.Tensor, float, bool]:

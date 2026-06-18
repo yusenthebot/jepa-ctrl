@@ -6,6 +6,16 @@ from torch import nn
 from .simnorm import SimNorm
 
 
+def _latent_norm(latent_norm: str, simnorm_groups: int) -> nn.Module:
+    """Latent normalizer for the encoder/predictor output: SimNorm (simplex, default) or
+    Identity (RAW latent, for the SIGReg arm — SIGReg targets a Gaussian, not a simplex)."""
+    if latent_norm == "simnorm":
+        return SimNorm(simnorm_groups)
+    if latent_norm == "none":
+        return nn.Identity()
+    raise ValueError(f"latent_norm must be 'simnorm' or 'none', got {latent_norm!r}")
+
+
 def symlog(x: torch.Tensor) -> torch.Tensor:
     """symlog(x) = sign(x) * log(|x| + 1). Compresses wide-range targets near 0."""
     return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
@@ -24,7 +34,12 @@ class Encoder(nn.Module):
     """
 
     def __init__(
-        self, obs_dim: int, latent_dim: int, hidden: int = 256, simnorm_groups: int = 8
+        self,
+        obs_dim: int,
+        latent_dim: int,
+        hidden: int = 256,
+        simnorm_groups: int = 8,
+        latent_norm: str = "simnorm",
     ) -> None:
         super().__init__()
         self.l1 = nn.Linear(obs_dim, hidden)
@@ -32,7 +47,7 @@ class Encoder(nn.Module):
         self.l2 = nn.Linear(hidden, hidden)
         self.proj = nn.Linear(hidden, latent_dim)
         self.act = nn.Mish()
-        self.simnorm = SimNorm(simnorm_groups)
+        self.simnorm = _latent_norm(latent_norm, simnorm_groups)
 
     def pre_simnorm(self, obs: torch.Tensor) -> torch.Tensor:
         h = self.act(self.ln(self.l1(obs)))
@@ -56,6 +71,7 @@ class Predictor(nn.Module):
         hidden: int = 256,
         action_head_dim: int = 64,
         simnorm_groups: int = 8,
+        latent_norm: str = "simnorm",
     ) -> None:
         super().__init__()
         self.action_head = nn.Sequential(nn.Linear(act_dim, action_head_dim), nn.Mish())
@@ -66,7 +82,7 @@ class Predictor(nn.Module):
             nn.Mish(),
             nn.Linear(hidden, latent_dim),
         )
-        self.simnorm = SimNorm(simnorm_groups)
+        self.simnorm = _latent_norm(latent_norm, simnorm_groups)
 
     def forward(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """z_pre is the CURRENT latent in pre-SimNorm space. Returns next SimNorm latent."""
@@ -136,3 +152,28 @@ class DistHead(nn.Module):
         out.scatter_(-1, lo.unsqueeze(-1), (1.0 - w_hi).unsqueeze(-1))
         out.scatter_(-1, hi.unsqueeze(-1), w_hi.unsqueeze(-1))
         return out
+
+
+class InverseDynamicsHead(nn.Module):
+    """g_inv: predict the action that drove the transition z_t -> z_{t+1}.
+
+    MLP on concat(z_t, z_{t+1}) -> act_dim. The task-AGNOSTIC anti-collapse signal of the
+    inverse-dynamics arm: to recover a from (z_t, z_{t+1}) the latents must encode
+    action-discriminative state information, so the encoder/predictor cannot collapse to a
+    constant. Operates on the SHARED rolled (predicted) latents so it shapes the PREDICTED
+    dynamics, not only the encoder's near-bijective state map.
+    """
+
+    def __init__(self, latent_dim: int, act_dim: int, hidden: int = 256) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(2 * latent_dim, hidden),
+            nn.Mish(),
+            nn.Linear(hidden, hidden),
+            nn.Mish(),
+            nn.Linear(hidden, act_dim),
+        )
+
+    def forward(self, z_t: torch.Tensor, z_next: torch.Tensor) -> torch.Tensor:
+        """z_t, z_next: (..., latent_dim). Returns predicted action (..., act_dim)."""
+        return self.net(torch.cat([z_t, z_next], dim=-1))

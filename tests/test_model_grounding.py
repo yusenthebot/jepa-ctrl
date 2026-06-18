@@ -66,12 +66,13 @@ def _sarsa_target(
 
 
 def test_value_target_depends_on_next_action():
+    torch.manual_seed(0)  # deterministic perturbation — robust to test order / global RNG state
     wm = _model(horizon=4)
     obs_seq, action_seq, reward_seq = _window(wm)
     # perturb the value-head weights off the deepcopy init so logits actually vary with action
     with torch.no_grad():
         for p in wm.target_value_head.parameters():
-            p.add_(torch.randn_like(p))
+            p.add_(torch.randn_like(p) * 2.0)
 
     a1 = action_seq[1]
     tgt_real = _sarsa_target(wm, obs_seq[1], a1, reward_seq[0])

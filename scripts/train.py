@@ -115,6 +115,9 @@ def main() -> None:
     p.add_argument("--updates-per-step", type=int, default=1)
     p.add_argument("--action-repeat", type=int, default=2)
     p.add_argument("--latent-dim", type=int, default=0, help="0 = auto (256 if obs>8 else 128)")
+    p.add_argument("--grounding", default="reward",
+                   choices=["reward", "inverse_dynamics", "sigreg"],
+                   help="GROUNDLESS arm; inverse_dynamics/sigreg are reward-free")
     p.add_argument("--device", default="cuda")
     p.add_argument("--outdir", default="runs/train")
     a = p.parse_args()
@@ -126,12 +129,15 @@ def main() -> None:
 
     env = DMCEnv(a.task, seed=a.seed, action_repeat=a.action_repeat)
     latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
-    mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim)
+    latent_norm = "none" if a.grounding == "sigreg" else "simnorm"  # SIGReg needs a RAW latent
+    mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
+                       latent_norm=latent_norm)
     wm = WorldModel(mcfg)
-    tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every)
+    tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding)
     trainer = Trainer(wm, tcfg, env.act_low, env.act_high, device=device)
-    print(f"device={device} task={a.task} obs={env.obs_dim} act={env.act_dim} latent={latent_dim} "
-          f"params={sum(q.numel() for q in wm.parameters() if q.requires_grad)/1e6:.2f}M")
+    nparam = sum(q.numel() for q in wm.parameters() if q.requires_grad) / 1e6
+    print(f"device={device} task={a.task} grounding={a.grounding} "
+          f"latent={latent_dim}/{latent_norm} params={nparam:.2f}M")
 
     curve: list[tuple[int, float]] = []
     collapse_log: list[dict] = []

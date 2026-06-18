@@ -12,7 +12,8 @@ from .buffer import ReplayBuffer
 from .config import ModelConfig
 from .jepa_controller import JepaController
 from .mppi import MPPIConfig, MPPIPlanner, eval_mppi, train_mppi
-from .nets import DistHead, Encoder, Predictor, symexp, symlog
+from .nets import DistHead, Encoder, InverseDynamicsHead, Predictor, symexp, symlog
+from .sigreg import sigreg_loss
 from .simnorm import SimNorm
 from .trainer import TrainConfig, Trainer
 from .world_model import WorldModel
@@ -23,7 +24,9 @@ __all__ = [
     "Encoder",
     "Predictor",
     "DistHead",
+    "InverseDynamicsHead",
     "WorldModel",
+    "sigreg_loss",
     "symlog",
     "symexp",
     "ReplayBuffer",
