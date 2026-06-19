@@ -117,7 +117,7 @@ def collapse_probe(model, task, seed, device, action_repeat, n=256) -> dict:
     }
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser("jepa-ctrl train")
     p.add_argument("--task", default="cheetah-run")
     p.add_argument("--steps", type=int, default=100_000)
@@ -135,6 +135,15 @@ def main() -> None:
                    help="auto = none for sigreg arm else simnorm; override for matched ablations")
     p.add_argument("--sigreg-coef", type=float, default=1.0)
     p.add_argument("--id-coef", type=float, default=1.0)
+    # R15: exploration-noise schedule on the behaviour policy during data collection. The
+    # late-training floor (explore-std-end) is the one-knob lever for the 3D bimodal-collapse
+    # round (initial-condition robustness via wider late-training state coverage).
+    p.add_argument("--explore-std", type=float, default=0.3,
+                   help="initial gaussian action-noise std on the MPPI behaviour action")
+    p.add_argument("--explore-std-end", type=float, default=0.05,
+                   help="annealed exploration floor (R15 lever: raise to widen state coverage)")
+    p.add_argument("--explore-anneal-steps", type=int, default=100_000,
+                   help="linear anneal explore-std -> explore-std-end over this many steps")
     p.add_argument("--freeze-repr", action="store_true",
                    help="red-team control: freeze random repr, train only reward/value heads")
     p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
@@ -144,7 +153,22 @@ def main() -> None:
     p.add_argument("--frame-stack", type=int, default=3)
     p.add_argument("--device", default="cuda")
     p.add_argument("--outdir", default="runs/train")
-    a = p.parse_args()
+    return p
+
+
+def train_config_from_args(a: argparse.Namespace, pixels: bool) -> TrainConfig:
+    """Build the (immutable) TrainConfig from parsed CLI args. Kept separate from main() so the
+    CLI->config wiring (esp. the R15 exploration-floor knob) is unit-testable without a sim."""
+    return TrainConfig(
+        seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding,
+        sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr,
+        explore_std=a.explore_std, explore_std_end=a.explore_std_end,
+        explore_anneal_steps=a.explore_anneal_steps,
+        capacity=50_000 if pixels else 1_000_000)  # stacked uint8 buffer ~6.3GB
+
+
+def main() -> None:
+    a = build_parser().parse_args()
 
     device = a.device if (a.device != "cuda" or torch.cuda.is_available()) else "cpu"
     set_seed(a.seed)
@@ -165,13 +189,12 @@ def main() -> None:
         mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
                            latent_norm=latent_norm)
     wm = WorldModel(mcfg)
-    tcfg = TrainConfig(seed_steps=a.seed_steps, eval_every=a.eval_every, grounding=a.grounding,
-                       sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr,
-                       capacity=50_000 if a.pixels else 1_000_000)  # stacked uint8 buffer ~6.3GB
+    tcfg = train_config_from_args(a, pixels=a.pixels)
     trainer = Trainer(wm, tcfg, env.act_low, env.act_high, device=device)
     nparam = sum(q.numel() for q in wm.parameters() if q.requires_grad) / 1e6
     print(f"device={device} task={a.task} grounding={a.grounding} "
-          f"latent={latent_dim}/{latent_norm} params={nparam:.2f}M")
+          f"latent={latent_dim}/{latent_norm} params={nparam:.2f}M "
+          f"explore_std={tcfg.explore_std}->{tcfg.explore_std_end}@{tcfg.explore_anneal_steps}")
 
     curve: list[tuple[int, float]] = []
     collapse_log: list[dict] = []
