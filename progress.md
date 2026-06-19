@@ -241,10 +241,14 @@ loss key). NEXT: re-run at 64×64 + more steps so both arms reach a real clean b
 robustness; if still inconclusive, this rung needs compute beyond a clean laptop 2h run.
 
 ### Frontier ladder (escalation in KIND — the new spine)
-1. **GROUNDLESS** (active): reward-free grounding ablation → reward-free controllable latent.
+1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
-   that collapse a reconstruction baseline (Distracting Control Suite, pixels). The clearest "JEPA
-   does what Dreamer can't" demo.
+   that collapse a reconstruction baseline. Pilot @45k INCONCLUSIVE (underpowered, compute-bound);
+   powered 64×64/90k re-run running. The clearest "JEPA does what Dreamer can't" demo if it holds.
+2b. **★ 3D CONTROL (Yusen, queued next)** — leap from planar cheetah to high-DOF 3D: dm_control
+   **quadruped**-walk/run (Go2 sim2real bridge) + humanoid-stand/walk. STATE-BASED so cheap (<2h,
+   unlike the compute-bound pixel rung) — the most tractable + highest-leverage next rung. Tests
+   whether the GROUNDLESS reward-free raw-latent finding SCALES to 3D high-DOF; quadruped → Go2 path.
 3. **Latent-disagreement intrinsic motivation**: ensemble disagreement in latent space → crack
    sparse / hard-exploration tasks reward-MPC fails on.
 4. **Temporal-abstraction JEPA**: predict far-future latents directly → long-horizon planning where
