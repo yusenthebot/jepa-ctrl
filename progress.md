@@ -246,6 +246,22 @@ controls (shuffles, then tips). The pixel rung is COMPUTE-BOUND on the laptop (r
 loss key). NEXT: re-run at 64×64 + more steps so both arms reach a real clean baseline before judging
 robustness; if still inconclusive, this rung needs compute beyond a clean laptop 2h run.
 
+### R9 — Distractor robustness POWERED (64×64, 90k, seed0): hypothesis REFUTED (honest)
+| arm | clean | distractor | drop |
+|-----|-------|-----------|------|
+| JEPA | **341** | 60 | 82% |
+| Reconstruction | 77 | 44 | 44% |
+
+64×64/90k gave JEPA a REAL clean baseline (341, up from 184@45k) — but the distractor **crushes** it
+(341→60, 82% drop), a LARGER relative drop than reconstruction's (44%). **JEPA is NOT automatically
+distractor-robust** in this setup: the latent-consistency objective did not, on its own, teach the CNN
+encoder to discard the unpredictable background. (Recon still underlearned at 77, so its drop stays
+confounded — but JEPA's own collapse under the distractor is the decisive negative.) **Killer-app claim
+does NOT hold here.** Likely needs: consistency as the *dominant* loss + much more training for the
+"ignore-unpredictable" effect to emerge, or an explicit distractor-invariance pressure — i.e. robustness
+is not free from the JEPA objective alone. Recorded straight; moved on to 3D per Yusen. (NOTE: the
+strongest, cleanest frontier result of the project remains GROUNDLESS — reward-free raw-latent control.)
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
