@@ -288,15 +288,49 @@ well-powered BOUNDARY (not "scales everywhere"). For the Go2 sim2real path, rewa
 practical config (450@200k, climbing). Open: WHY does reward-free degrade with DOF (predictor
 capacity? exploration? planning horizon in high-dim action space?).
 
+### R12 — 3D capacity probe (H1): REFUTED. lat512 reward-free quad-walk 200k seed0 = **281**
+[curve 290/306/168/284] — within the lat256 reward-free variance band [169,332,52]; latent stays
+`collapsed=true` (obs_latent_corr≈0) throughout. Doubling latent capacity does NOT lift reward-free
+into reward-grounded territory ⇒ **H1 (representation capacity) is NOT the DoF lever.**
+
+### R13 — WHY reward-free degrades with DoF: a RED-TEAM SAVE (2026-06-19, eval-only)
+Diagnosed the R11 "DoF degradation" on already-trained models (no retrain). `scripts/diag_dof.py`.
+- **H3 (latent under-encodes task) — REFUTED, clean.** Ridge probe of the frozen online latent →
+  per-step reward: R²≈ **0.81–0.94 (reward-free quad)**, 0.96 (reward-grounded), 0.99 (cheetah).
+  The reward-free latent encodes the task reward almost as well as the grounded one — representation
+  is *not* the bottleneck. (Value head is miscalibrated everywhere — underestimates MC return,
+  corr≈0 on cheetah — yet cheetah controls great ⇒ planner leans on summed per-step reward over a
+  short horizon, not the terminal bootstrap.)
+- **H2 (planner search) — the clean story COLLAPSED under red-team.** A coarse sweep *looked* like
+  "more MPPI samples (512→2048) reliably fixes it" (RF 184→412, RW 450→865, tight variance). But a
+  CONTROLLED one-knob-at-a-time sweep (elites fixed; 5–8 eps) shows **NO clean monotonic lever** for
+  any of {samples 256–4096, iters 3–12, horizon 2–5, elites 32–256}. The coarse "tight wide" result
+  was a 3-episode fluke + a `num_elites=128` confound.
+- **The real, red-teamed finding: 3D quad control is BIMODAL, not a smooth "DoF degradation."** Every
+  config has episodes that either **catch a gait** (RF ~250–450, RW ~830–875) or **collapse early**
+  (~15–125). Which basin is hit is dominated by initial-condition/planning stochasticity. Verified
+  eyes-on: the SAME controller+config gives {494,498,488,505} vs {72} across 5 episodes
+  (`runs/R13_dof_diag/{good_gait,collapsed}.png`). ⇒ The prior R10/R11 point estimates (RF 184,
+  RW 450, 3 eps each) were **underpowered means over a bimodal distribution** — the "degradation"
+  conflated a real reward-vs-RF *good-basin* gap (~400 vs ~850) with collapse-rate variance.
+- **Causes cleanly refuted: H1 capacity (R12), H3 representation (R13).** The actual lever for 3D is
+  the **collapse rate / gait-acquisition reliability** — a stability/exploration/training problem,
+  NOT planner-tuning and NOT representation. This red-team saved the campaign from a wrong
+  "tune the planner" / "fix the latent" conclusion. (red-team save #4.)
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
    that collapse a reconstruction baseline. Pilot @45k INCONCLUSIVE (underpowered, compute-bound);
    powered 64×64/90k re-run running. The clearest "JEPA does what Dreamer can't" demo if it holds.
-2b. **★ 3D CONTROL (Yusen, queued next)** — leap from planar cheetah to high-DOF 3D: dm_control
-   **quadruped**-walk/run (Go2 sim2real bridge) + humanoid-stand/walk. STATE-BASED so cheap (<2h,
-   unlike the compute-bound pixel rung) — the most tractable + highest-leverage next rung. Tests
-   whether the GROUNDLESS reward-free raw-latent finding SCALES to 3D high-DOF; quadruped → Go2 path.
+2b. **★ 3D CONTROL — reframed by R13.** Quad-walk control is BIMODAL (gait vs early collapse), and the
+   reward-free-vs-reward gap lives in the *good basin* (~400 vs ~850); H1/H3 refuted as causes. **Next
+   seed = attack the COLLAPSE RATE, not the planner/representation.** Candidate levers (next round,
+   pick via a quick controlled test): (a) measure collapse-rate vs an exploration bonus / action-noise
+   schedule during training; (b) terminal-value recalibration (the value head underestimates MC return
+   ~2× — fix the symlog/horizon target and re-measure good-basin reliability); (c) train longer / more
+   updates-per-step to see if the collapse basin shrinks; (d) report 3D results as **good-basin return
+   + collapse rate over ≥10 eps**, never a single mean — all prior 3-eps quad numbers are underpowered.
 3. **Latent-disagreement intrinsic motivation**: ensemble disagreement in latent space → crack
    sparse / hard-exploration tasks reward-MPC fails on.
 4. **Temporal-abstraction JEPA**: predict far-future latents directly → long-horizon planning where

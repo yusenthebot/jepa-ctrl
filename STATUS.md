@@ -1,13 +1,21 @@
 # STATUS — main
-updated: 2026-06-19 · loop 12 · PAUSED (resume later)
+updated: 2026-06-19T10:55 · loop 13
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    PAUSED at a clean checkpoint. To resume: read LOOP_PROMPT.md + this + progress.md + git log, then continue the loop.
+phase:    review/diagnose — R13 done, clean checkpoint
 owns:     whole repo (single session)
-state:    Campaign produced 1 novel finding + honest negatives, all committed & pushed.
-  - GROUNDLESS (headline): reward-free raw-latent consistency controls cheetah ~496±31 (matches reward-grounded), red-teamed + 2x2-attributed (collapse was a SimNorm artifact, not a reward requirement).
-  - 3D: reward-free generalizes to quadruped (learns) but DEGRADES with DoF (184 vs reward-grounded 450) — a real complexity boundary.
-  - Negatives (honest): distractor-robustness refuted at laptop scale; humanoid(21-DoF) failed @80k.
-  - 3 red-team saves; 5 integration bugs caught by smokes. runs/ = R01..R12 chronological.
-in_flight: R12 latent-512 reward-free quadruped probe (bpve3exmc) may still be running — if it lands, record vs lat256=184 (tests H1 representation-capacity for the DoF degradation).
-next:     extend GROUNDLESS to 3D (ALL-SIM): diagnose WHY reward-free degrades with DoF — H1 capacity (R12 probe), H2 MPPI under-searches 12-D action, H3 consistency latent under-encodes task subspace. Then try a minimal task-aware signal to recover 3D while staying mostly reward-free. Other rungs: latent-disagreement intrinsic exploration; temporal-abstraction JEPA.
-notes:    PIN mujoco==3.8.1. torch cu128 venv (~/jepa-ctrl/.venv). MUJOCO_GL=egl. scripts/train.py --task <domain-task> [--pixels] --grounding {reward | sigreg --sigreg-coef 0 = reward-free raw} [--latent-dim] [--size]. 3D state ~20min/100k, no new code. RED-TEAM every headline. progress.md = full record; LOOP_PROMPT.md = the driving directive.
+state:    R13 RED-TEAM SAVE (#4): diagnosed WHY reward-free latent control "degrades" in 3D quad.
+  - H1 capacity REFUTED (R12: lat512 quad-walk=281, within lat256 RF variance band [169,332,52]).
+  - H3 representation REFUTED (R13: frozen latent decodes reward at R²≈0.81-0.94 RF vs 0.96 reward).
+  - H2 planner: coarse "more samples fixes it" COLLAPSED under controlled one-knob sweep
+    (no clean lever in samples/iters/horizon/elites; elites=128 was the confound).
+  - REAL finding: 3D quad control is BIMODAL (gait ~400/850 vs collapse ~15-125), not smooth
+    degradation; prior R10/R11 means (RF184/RW450, 3 eps) underpowered over a bimodal dist.
+    Eyes-on confirmed: same ctrl/cfg → {494,498,488,505} vs {72}. runs/R13_dof_diag/.
+in_flight: none. (R12 lat512 probe landed: 281, recorded.)
+next:     attack the COLLAPSE RATE (not planner/representation): exploration bonus / value
+  recalibration (value head underestimates MC return ~2×) / longer training; ALWAYS report 3D as
+  good-basin return + collapse rate over >=10 eps. Other rungs: latent-disagreement exploration;
+  temporal-abstraction JEPA.
+notes:    PIN mujoco==3.8.1. torch cu128 venv (.venv). MUJOCO_GL=egl. scripts/diag_dof.py = R13
+  eval-only diagnostic (--part h2|h3|both|ctrl --sweep). RED-TEAM every headline. progress.md =
+  full record; LOOP_PROMPT.md = driving directive. WARNING: 3-eps quad means are NOISE (bimodal).
