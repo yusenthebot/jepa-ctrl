@@ -7,6 +7,12 @@ frozen pretrained V-JEPA encoder → sim2real to Go2/SO-101.
 
 Repo: https://github.com/yusenthebot/jepa-ctrl · single session on `main`.
 
+**Runs naming convention (gitignored `runs/`):** `runs/R<NN>_<phase>/<arm>_s<seed>/` — round number
+prefixes everything so an alphabetical listing is chronological. R01 harness_random · R02
+first_control · R03 grounding_fix · R05 rung1_generalize · R06 stability · R07 groundless_{matrix,
+redteam,2x2} · R08 distractor_pilot · R09 distractor_powered (p64_*) · R10+ = 3D control. Smokes are
+deleted, not kept. Every new `--outdir` uses this scheme.
+
 ---
 
 ## Current state — Round 1 COMPLETE (2026-06-17)
