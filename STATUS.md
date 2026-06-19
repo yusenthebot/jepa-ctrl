@@ -1,21 +1,22 @@
 # STATUS — main
-updated: 2026-06-19T10:55 · loop 13
+updated: 2026-06-19T12:30 · loop 14
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    review/diagnose — R13 done, clean checkpoint
+phase:    review/diagnose — R14 done, clean checkpoint
 owns:     whole repo (single session)
-state:    R13 RED-TEAM SAVE (#4): diagnosed WHY reward-free latent control "degrades" in 3D quad.
-  - H1 capacity REFUTED (R12: lat512 quad-walk=281, within lat256 RF variance band [169,332,52]).
-  - H3 representation REFUTED (R13: frozen latent decodes reward at R²≈0.81-0.94 RF vs 0.96 reward).
-  - H2 planner: coarse "more samples fixes it" COLLAPSED under controlled one-knob sweep
-    (no clean lever in samples/iters/horizon/elites; elites=128 was the confound).
-  - REAL finding: 3D quad control is BIMODAL (gait ~400/850 vs collapse ~15-125), not smooth
-    degradation; prior R10/R11 means (RF184/RW450, 3 eps) underpowered over a bimodal dist.
-    Eyes-on confirmed: same ctrl/cfg → {494,498,488,505} vs {72}. runs/R13_dof_diag/.
-in_flight: none. (R12 lat512 probe landed: 281, recorded.)
-next:     attack the COLLAPSE RATE (not planner/representation): exploration bonus / value
-  recalibration (value head underestimates MC return ~2×) / longer training; ALWAYS report 3D as
-  good-basin return + collapse rate over >=10 eps. Other rungs: latent-disagreement exploration;
+state:    R14: characterized the BIMODAL 3D collapse over 20 eps + REFUTED eval-time fixes.
+  - collapse_rate ~0.55-0.70 and ARM-INDEPENDENT: reward grounding does NOT lower collapse
+    (RW 0.70 = RF 0.70), only raises good-basin (RW ~674-817 vs RF ~400-486). The reward-vs-RF
+    gap is a good-basin QUALITY gap, NOT a reliability gap (overturns "reward = more reliable").
+  - eval-time action-smoothness levers (corr/std_min/temperature/momentum, 1-knob, verified wired)
+    REFUTED: best apparent (corr0.3 s0 0.55->0.40) NOT sig (Fisher p=0.53), reverses on s1/RW.
+    Only robust effect is wrong-way: greedier (low temp) -> collapse 0.75-0.95 all arms.
+  - Causes refuted: H1 capacity(R12), H3 repr(R13), H2 planner(R13), eval-smoothness(R14).
+    By elimination: collapse is a TRAINING / gait-acquisition-reliability problem.
+in_flight: none. scripts/collapse_rate.py landed; runs/R14_collapse/.
+next:     TRAINING-side round (only lever left): retrain quad reward-free with ONE controlled change
+  (updates-per-step up | action-noise schedule in data collection | terminal-value recal), measure
+  collapse_rate over >=20 eps vs R11 base (0.55-0.70). Other rungs: latent-disagreement explore;
   temporal-abstraction JEPA.
-notes:    PIN mujoco==3.8.1. torch cu128 venv (.venv). MUJOCO_GL=egl. scripts/diag_dof.py = R13
-  eval-only diagnostic (--part h2|h3|both|ctrl --sweep). RED-TEAM every headline. progress.md =
-  full record; LOOP_PROMPT.md = driving directive. WARNING: 3-eps quad means are NOISE (bimodal).
+notes:    PIN mujoco==3.8.1. torch cu128 venv (.venv). MUJOCO_GL=egl. scripts/collapse_rate.py =
+  R14 eval-only (--part base|lever, 20 eps, THRESH=150). RED-TEAM every headline. progress.md =
+  full record; LOOP_PROMPT.md = directive. ALWAYS report 3D as good-basin + collapse rate >=20 eps.

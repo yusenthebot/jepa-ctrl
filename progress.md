@@ -318,19 +318,50 @@ Diagnosed the R11 "DoF degradation" on already-trained models (no retrain). `scr
   NOT planner-tuning and NOT representation. This red-team saved the campaign from a wrong
   "tune the planner" / "fix the latent" conclusion. (red-team save #4.)
 
+### R14 — COLLAPSE RATE characterized (20 eps) + eval-time levers REFUTED (2026-06-19, eval-only)
+Followed R13's seed: stop tuning planner search-breadth; properly measure the BIMODAL collapse rate
+over many eps and test EVAL-TIME action-smoothness levers on the FIXED R11 checkpoints (no retrain).
+`scripts/collapse_rate.py`. THRESH=150 sits in a clean wide gap in every arm (e.g. RW_s0 collapse
+cluster 101-129 vs gait cluster 869-896). 20 eps/cell. runs/R14_collapse/.
+
+- **Collapse rate is HIGH and ARM-INDEPENDENT (the genuinely new finding):** base collapse_rate
+  RF_s0 **0.55**, RF_s1 **0.70**, RW_s0 **0.70**. Reward grounding does **NOT** reduce the collapse
+  rate (RW 0.70 = RF 0.70); it only RAISES the good-basin return (RW good ~674-817 vs RF ~400-486).
+  ⇒ The reward-vs-reward-free gap is **entirely a good-basin QUALITY gap, not a reliability gap.**
+  Overturns the naive read that the reward-grounded arm is "more reliable" — it tips over just as often.
+- **Eval-time action-smoothness levers REFUTED as a collapse fix.** One-knob-at-a-time sweep
+  (corr {0.3,0.6,0.85} · std_min {0.15,0.3} · temperature {0.1,0.05} · momentum {0.3,0.5}, all
+  verified wired into the planner): **no lever robustly lowers collapse across seeds+arms.** Best
+  apparent (corr0.3 on s0: 0.55→0.40) is **NOT significant** (Fisher p=0.53) and **REVERSES** on
+  s1/RW (p=1.0). The only robust, consistent effect is the WRONG direction — **greedier planning
+  (temp 0.5→0.1/0.05) makes collapse strictly worse (0.75-0.95 across all 3 arms)** ⇒ eval-time
+  exploration noise is load-bearing; collapse is NOT eval-time jerkiness/over-exploitation.
+- **Verdict (red-teamed):** the bimodal collapse is **NOT fixable at eval/planning time**. Causes
+  now refuted: H1 capacity (R12), H3 representation (R13), H2 planner-search (R13), **eval-time
+  action-smoothness (R14)**. By elimination the lever is a **TRAINING / gait-acquisition-reliability**
+  problem (initial-condition robustness) — exactly where R13 pointed. red-team passed: levers proven
+  wired; significance tested (Fisher); bimodality crisp + eyes-on (R13 good_gait/collapsed.png, same
+  R11 checkpoints).
+- **NEXT (training-side, the only remaining lever):** retrain quad reward-free with ONE controlled
+  training change and measure collapse_rate over ≥20 eps vs the R11 base (0.55-0.70). Candidates,
+  pick one: (a) **updates-per-step ↑** (undertrained-policy hypothesis — cheapest, ~20min/100k);
+  (b) **exploration/action-noise SCHEDULE during data collection** (widen initial-state coverage so
+  the policy learns to recover from bad starts); (c) terminal-value recalibration (value head under-
+  estimates MC return ~2×). Report 3D ALWAYS as good-basin return + collapse rate over ≥20 eps.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
    that collapse a reconstruction baseline. Pilot @45k INCONCLUSIVE (underpowered, compute-bound);
    powered 64×64/90k re-run running. The clearest "JEPA does what Dreamer can't" demo if it holds.
-2b. **★ 3D CONTROL — reframed by R13.** Quad-walk control is BIMODAL (gait vs early collapse), and the
-   reward-free-vs-reward gap lives in the *good basin* (~400 vs ~850); H1/H3 refuted as causes. **Next
-   seed = attack the COLLAPSE RATE, not the planner/representation.** Candidate levers (next round,
-   pick via a quick controlled test): (a) measure collapse-rate vs an exploration bonus / action-noise
-   schedule during training; (b) terminal-value recalibration (the value head underestimates MC return
-   ~2× — fix the symlog/horizon target and re-measure good-basin reliability); (c) train longer / more
-   updates-per-step to see if the collapse basin shrinks; (d) report 3D results as **good-basin return
-   + collapse rate over ≥10 eps**, never a single mean — all prior 3-eps quad numbers are underpowered.
+2b. **★ 3D CONTROL — reframed by R13/R14.** Quad-walk control is BIMODAL (gait vs early collapse).
+   R14 (20 eps): collapse_rate ~0.55-0.70 and **ARM-INDEPENDENT** — reward grounding raises the
+   good-basin (~674-817 vs RF ~400-486) but does NOT lower collapse. Refuted as causes: H1 capacity
+   (R12), H3 representation (R13), H2 planner-search (R13), **eval-time action-smoothness (R14)**.
+   ⇒ The lever is **TRAINING / gait-acquisition reliability** (initial-condition robustness), the
+   only thing left standing. **Next round = ONE controlled TRAINING change** (updates-per-step ↑, or
+   action-noise schedule during data collection, or terminal-value recal), measure collapse_rate over
+   ≥20 eps vs R11 base. Report 3D ALWAYS as good-basin return + collapse rate over ≥20 eps.
 3. **Latent-disagreement intrinsic motivation**: ensemble disagreement in latent space → crack
    sparse / hard-exploration tasks reward-MPC fails on.
 4. **Temporal-abstraction JEPA**: predict far-future latents directly → long-horizon planning where
