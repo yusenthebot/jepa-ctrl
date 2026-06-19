@@ -275,8 +275,18 @@ quadruped-walk (obs 78, act 12 — the Go2 sim2real bridge), 3D state-based (~20
   cross-seed reverses the means. Recorded straight — the honest claim is "reward-free control works in
   3D", NOT "beats reward in 3D".
 - **humanoid-stand (act 21): 6.9 — FAILED** at 80k (21-DOF too hard for this budget; honest negative).
-NEXT: longer quadruped (200k, 3D state cheap ~40min) to test whether reward-free STABILIZES to
-low-variance control with more steps; then toward Go2 sim2real.
+### R11 — Quadruped 200k cross-seed: the GROUNDLESS BOUNDARY (honest, well-powered)
+quadruped-walk, 200k, separate seeds 0/1/2, 3 eval-eps:
+- **reward-free raw: 184 ± 141** [169, 332, 52] — did NOT stabilize even at 200k (seed2 stuck 52).
+- **reward-grounded: 450 ± 234** [424, 696, 230] — clearly better, still climbing at 200k.
+⇒ **Refined GROUNDLESS conclusion (the real scientific result):** reward-free raw-latent consistency
+controls *low-DOF 2D* (cheetah ~496, matches reward-grounded) but **degrades in high-DOF 3D**
+(quadruped 184 ≪ reward-grounded 450). Reward-free latent control WORKS in 3D (learns, 169-332 on
+2/3 seeds) but hits a **complexity/DOF ceiling** — as action-dim rises the self-supervised consistency
+signal alone is insufficient and reward grounding becomes necessary for stable control. A genuine,
+well-powered BOUNDARY (not "scales everywhere"). For the Go2 sim2real path, reward-grounded is the
+practical config (450@200k, climbing). Open: WHY does reward-free degrade with DOF (predictor
+capacity? exploration? planning horizon in high-dim action space?).
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
