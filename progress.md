@@ -262,6 +262,20 @@ does NOT hold here.** Likely needs: consistency as the *dominant* loss + much mo
 is not free from the JEPA objective alone. Recorded straight; moved on to 3D per Yusen. (NOTE: the
 strongest, cleanest frontier result of the project remains GROUNDLESS — reward-free raw-latent control.)
 
+### R10 — 3D CONTROL (state, 80k, seed0): GROUNDLESS SCALES TO 3D (red-teamed, positive)
+quadruped-walk (obs 78, act 12 — the Go2 sim2real bridge), 3D state-based (~20min/100k, cheap):
+- **reward-FREE raw-latent consistency: ~400** — controls the 3D quadruped. Red-team (seed-0 policy
+  on init-conditions [1000,1,5,7]) = [400, 409, **18**, 404]: robust on 3/4, fragile on 1. Forward
+  locomotion confirmed by return (velocity reward) + ground-translation in render.
+- **reward-grounded: ~223** ([370,214,126,184]) — steadier (no collapse) but LOWER.
+- ⇒ **The GROUNDLESS finding (reward-free raw-latent consistency) GENERALIZES from planar cheetah to
+  high-DOF 3D** — and beats reward-grounding on its good runs. Caveat: higher variance (one init-cond
+  collapse) vs reward-grounded's consistency. Red-team lesson: the flashy single-eval "391 vs 174"
+  was misleading (one eval hit the fragile init-cond); full cross-eval reconciled it.
+- **humanoid-stand (act 21): 6.9 — FAILED** at 80k (21-DOF too hard for this budget; honest negative).
+NEXT: true training-cross-seed (train seeds 1,2 separately, both arms) to firm "raw ≥ reward in 3D" +
+characterize the fragility; then push quadruped longer / toward Go2 sim2real. State-3D is cheap (<2h).
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
