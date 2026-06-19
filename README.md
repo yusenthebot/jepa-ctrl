@@ -29,18 +29,18 @@ control a simulated robot. It can.
 
 ## Does it work?
 
-| Task (DeepMind Control) | Random policy | **jepa-ctrl (ours)**, 100k steps | "Solved" |
-|---|---|---|---|
-| **cheetah-run** | ~7 | **522 ± 139** (cross-seed, 3 seeds) ✅ | ~850 |
-| reacher-easy | ~40 | **949** (peak, single seed)\* | ~960 |
-| walker-walk | ~45 | **419** (peak, single seed)\* | ~960 |
+Yes — and the project became a small research study of *what makes latent-only control work*.
+All results are cross-seed and verified by watching the real sim rollout, not by "the loss went down".
 
-`*` reacher/walker reach near-solved performance but training is not yet stable across the full
-run (a late-training value blow-up we're actively fixing — see roadmap). cheetah-run is the
-validated, cross-seed result.
+| Task (dm_control) | Random | reward-grounded | **reward-FREE** (our key result) | "solved" |
+|---|---|---|---|---|
+| **cheetah-run** (2D, 6-DoF) | ~7 | 522 ± 139 | **496 ± 31** ✅ | ~850 |
+| reacher-easy (2D) | ~40 | ~752 cross-seed | — | ~960 |
+| **quadruped-walk** (3D, 12-DoF) | low | 450 ± 234 | 184 ± 141 (degrades) | — |
+| humanoid-stand (3D, 21-DoF) | — | ✗ failed @80k | — | — |
 
 <p align="center"><img src="docs/cheetah_curve.png" width="460"><br/>
-<em>cheetah-run: episode return vs. environment steps (seed 0). 7 → 557 in 100k steps / ~20 min.</em></p>
+<em>cheetah-run: episode return vs. env steps. 7 → ~550 in ~20 min on the laptop.</em></p>
 
 ## How it works — system block diagram
 
@@ -87,14 +87,29 @@ flowchart TB
   *predicted* latents match the EMA target encoder's latents of the *real* future (the JEPA bet),
   while reward/value heads keep the latent grounded in the task.
 
-## The key finding (the core scientific bet, answered)
+## Key findings (the research story, honestly)
 
-The central question was whether the pure JEPA objective (predict your own future latent) is
-*enough*. **It is not** — on its own the latent **collapses**: the encoder learns to ignore the
-observation and the predicted-latent loss goes to ~0 trivially while the robot does nothing. The
-fix that unlocked control (cheetah 138 → 557, a **4×** jump) was **grounding the latent in the
-task**: predict reward at *every* step of the imagined rollout, and bootstrap the value with the
-*real* next action. This mirrors why TD-MPC2 works, and it's the load-bearing lesson here.
+1. **Reward-free latent control works (GROUNDLESS).** The headline result: a JEPA can control a sim
+   robot with **zero task reward in its representation** — pure multi-step latent consistency on a
+   *raw* (un-normalized) latent with an EMA target. On cheetah it **matches the reward-grounded
+   model** (496 ± 31 reward-free vs 522 reward), at *lower* variance.
+2. **An earlier "reward is required" conclusion was wrong — and we caught it.** Mid-project we
+   believed pure consistency collapses (encoder ignores the observation) so reward grounding was
+   required. A controlled 2×2 ablation showed that collapse was an artifact of the **SimNorm
+   simplex** latent, *not* of going reward-free: on a **raw** latent, consistency-only does **not**
+   collapse (496) while on SimNorm it does (→4). The load-bearing variable is the latent
+   parameterization, not the reward.
+3. **It has a complexity boundary.** Reward-free control is strong in low-DoF 2D (cheetah) but
+   **degrades in high-DoF 3D** (quadruped 184 vs reward-grounded 450) — the self-supervised
+   consistency signal alone stops being enough as the action space grows. (Why is the current
+   open question.)
+4. **Honest negatives.** *Distractor robustness* — the hoped-for "JEPA ignores an unpredictable
+   background where a reconstruction model can't" — **did not hold** at laptop scale. *Humanoid*
+   (21-DoF) was not solved within budget.
+
+Every headline here survived an adversarial **red-team** pass; three plausible-but-wrong claims
+(including two of the above before correction) were refuted by re-seeding / full cross-eval before
+being recorded. Single-seed and single-eval numbers misled repeatedly — the discipline is the point.
 
 ## Run it
 
@@ -109,6 +124,12 @@ PYTHONPATH=. MUJOCO_GL=egl python -m jepa_ctrl.cli --task cheetah-run --controll
 
 # 3. train the JEPA-MPPI controller (~20 min on an RTX 5080) and render the result
 PYTHONPATH=. MUJOCO_GL=egl python scripts/train.py --task cheetah-run --steps 100000 --seed 0 --outdir runs/cheetah
+
+# reward-FREE (GROUNDLESS): consistency-only on a raw latent — no reward in the representation
+PYTHONPATH=. MUJOCO_GL=egl python scripts/train.py --task cheetah-run --grounding sigreg --sigreg-coef 0 --steps 100000
+
+# 3D high-DoF control
+PYTHONPATH=. MUJOCO_GL=egl python scripts/train.py --task quadruped-walk --steps 200000
 
 # 4. tests
 PYTHONPATH=. MUJOCO_GL=egl python -m pytest -q
@@ -128,15 +149,20 @@ scripts/train.py     training driver (real-sim eval, collapse trajectory, wall-c
 progress.md          full results table, the frontier roadmap, and what did/didn't work
 ```
 
-## Roadmap (floor → frontier)
+## Status & roadmap (all-sim — no sim2real)
 
-- [x] **RUNG 0 — control a robot from latent planning.** cheetah-run, 522 ± 139 cross-seed. ✅
-- [ ] **Stability** — fix the late-training value blow-up so reacher/walker hold near-solved.
-- [ ] **RUNG 1** — match TD-MPC2 sample-efficiency across the DMC suite (head-to-head).
-- [ ] **RUNG 2** — control from **pixels** (swap the MLP encoder for a small CNN, keep everything else).
-- [ ] **RUNG 3** — goal-image / reward-free control (the literal V-JEPA 2-AC mode).
-- [ ] **RUNG 4** — manipulation tasks; then a **frozen pretrained V-JEPA encoder**.
-- [ ] **RUNG 5** — sim-to-real onto a real SO-101 arm / Unitree Go2.
+- [x] Latent-MPPI control of dm_control robots (cheetah, reacher).
+- [x] **Reward-free latent control (GROUNDLESS)** on cheetah, red-teamed + SimNorm-vs-raw attributed.
+- [x] 3D quadruped control (reward-grounded); reward-free generalizes but **degrades with DoF**.
+- [x] Pixels + distractor-robustness head-to-head — **honest negative** (JEPA not auto-robust here).
+- [ ] **Open / next:** *why* does reward-free degrade with DoF (latent capacity vs planning vs
+      task-relevant info)? Can a minimal task-aware signal recover 3D control while staying mostly
+      reward-free?
+- [ ] Intrinsic-motivation exploration (latent-ensemble disagreement) on sparse tasks.
+- [ ] Temporal-abstraction JEPA for long-horizon planning.
+
+Full round-by-round log + experiment tables: [`progress.md`](progress.md). The original autonomous
+research directive that drove all of this: [`LOOP_PROMPT.md`](LOOP_PROMPT.md).
 
 ## How this was built
 

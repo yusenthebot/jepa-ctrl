@@ -1,9 +1,13 @@
 # STATUS — main
-updated: 2026-06-19 · loop 11
-goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real per Yusen 2026-06-19) — dm_control only
-phase:    frontier (extend GROUNDLESS to 3D — diagnose+fix reward-free DOF degradation)
+updated: 2026-06-19 · loop 12 · PAUSED (resume later)
+goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
+phase:    PAUSED at a clean checkpoint. To resume: read LOOP_PROMPT.md + this + progress.md + git log, then continue the loop.
 owns:     whole repo (single session)
-doing:    R11 quadruped 200k cross-seed = the GROUNDLESS BOUNDARY: reward-free raw-latent controls low-DOF 2D (cheetah ~496, matches reward) but DEGRADES in high-DOF 3D (quadruped 184±141 << reward-grounded 450±234). Reward-free works in 3D (learns, 169-332 on 2/3) but hits a complexity/DOF ceiling; reward grounding needed for stable hard-3D control. Honest, well-powered boundary (not "scales everywhere"). 3 red-team saves this campaign.
-blocked:  none
-next:     ACTIVE = extend GROUNDLESS to 3D (ALL-SIM). Diagnose+fix why reward-free degrades with DOF. Hypotheses: (H1) representation/latent capacity too small for complex 3D dynamics; (H2) MPPI under-searches the 12-dim action space; (H3) consistency latent under-encodes task-relevant subspace (the deep one). First probe RUNNING: reward-free quadruped --latent-dim 512 (capacity test) seeds 0,1 vs the 256 baseline (184). (sim2real Go2/SO-101 = OUT of scope.)
-notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. scripts/train.py --task <domain-task> [--pixels] --grounding {reward | sigreg --sigreg-coef 0 (=reward-free raw)} [--size]. 3D state cheap (~20min/100k), no new code. runs/=R<NN>_<phase>/ chronological. RED-TEAM every headline — single-seed/single-eval numbers misled 3x. Best frontier result: GROUNDLESS reward-free control (2D), characterized boundary in 3D.
+state:    Campaign produced 1 novel finding + honest negatives, all committed & pushed.
+  - GROUNDLESS (headline): reward-free raw-latent consistency controls cheetah ~496±31 (matches reward-grounded), red-teamed + 2x2-attributed (collapse was a SimNorm artifact, not a reward requirement).
+  - 3D: reward-free generalizes to quadruped (learns) but DEGRADES with DoF (184 vs reward-grounded 450) — a real complexity boundary.
+  - Negatives (honest): distractor-robustness refuted at laptop scale; humanoid(21-DoF) failed @80k.
+  - 3 red-team saves; 5 integration bugs caught by smokes. runs/ = R01..R12 chronological.
+in_flight: R12 latent-512 reward-free quadruped probe (bpve3exmc) may still be running — if it lands, record vs lat256=184 (tests H1 representation-capacity for the DoF degradation).
+next:     extend GROUNDLESS to 3D (ALL-SIM): diagnose WHY reward-free degrades with DoF — H1 capacity (R12 probe), H2 MPPI under-searches 12-D action, H3 consistency latent under-encodes task subspace. Then try a minimal task-aware signal to recover 3D while staying mostly reward-free. Other rungs: latent-disagreement intrinsic exploration; temporal-abstraction JEPA.
+notes:    PIN mujoco==3.8.1. torch cu128 venv (~/jepa-ctrl/.venv). MUJOCO_GL=egl. scripts/train.py --task <domain-task> [--pixels] --grounding {reward | sigreg --sigreg-coef 0 = reward-free raw} [--latent-dim] [--size]. 3D state ~20min/100k, no new code. RED-TEAM every headline. progress.md = full record; LOOP_PROMPT.md = the driving directive.
