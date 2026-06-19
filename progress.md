@@ -349,6 +349,30 @@ cluster 101-129 vs gait cluster 869-896). 20 eps/cell. runs/R14_collapse/.
   the policy learns to recover from bad starts); (c) terminal-value recalibration (value head under-
   estimates MC return ~2×). Report 3D ALWAYS as good-basin return + collapse rate over ≥20 eps.
 
+### R15 — TRAINING-side collapse lever (IN-FLIGHT 2026-06-19): exploration-floor knob
+R13/R14 eliminated every NON-training cause of the 3D bimodal collapse (H1 capacity R12, H3 repr
+R13, H2 planner R13, eval-time action-smoothness R14). The only lever left = training-side
+gait-acquisition reliability (initial-condition robustness). R15 tests ONE controlled knob:
+**raise the late-training exploration floor** `explore_std_end` 0.05->0.20 (anneal 0.3->floor over
+100k, then hold floor 100k-200k) so the behaviour policy keeps wider late-training state coverage
+-> learns to recover from bad starts -> fewer early collapses. Reward-free raw quad (sigreg coef 0,
+latent none/256), 200k, ALL-FRESH retrain (controls retrain variance), base(0.05) vs treat(0.20)
+x seeds{0,1} = 4 runs. Scaffold committed 47f2889 (CLI knob refactor build_parser/
+train_config_from_args, sim-free unit-testable; r15_collapse.py 20-eps collapse_rate + Fisher-exact;
+knob verified consumed by trainer `_explore_std`). 4 runs in background (~37min each, batch ETA
+~15:20). **PRE-REGISTERED RED-TEAM (do NOT trust collapse_rate without all of these):**
+1. THRESH=150 was verified in-gap for R11 BASE checkpoints only; the treat checkpoint's bimodal
+   clusters may SHIFT — plot the per-ep `eps` histogram per cell, confirm 150 sits in the valley,
+   eyes-on render 1 good + 1 collapsed ep per cell before believing the rate.
+2. Report BOTH collapse_rate AND good_basin_mean. More late-training noise could LOWER collapse
+   yet CRATER good-basin return — that is NOT a win. The headline must be the pair, never the rate alone.
+3. Only 2 seeds. If s0 and s1 disagree (R14's eval levers reversed on s1) the result is INCONCLUSIVE
+   — add seed 2 before any directional claim.
+4. Fisher is 1-sided (treat collapses LESS, pre-registered H1). Also report the honest direction if
+   treat collapses MORE — raising late noise hurting gait acquisition is a real, plausible outcome.
+If the knob is null/negative: next levers = updates-per-step up (undertrained-policy hypothesis) or
+terminal-value recalibration (value head underestimates MC return ~2x).
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
