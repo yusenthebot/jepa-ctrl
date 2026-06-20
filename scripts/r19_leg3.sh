@@ -20,7 +20,8 @@ ROOT="runs/R19L3_${TASK//-/_}"
 mkdir -p "$ROOT"
 
 run() {  # arm  extra_args  seed
-  local arm="$1" extra="$2" seed="$3" out="$ROOT/${arm}_s${seed}"
+  local arm="$1" extra="$2" seed="$3"
+  local out="$ROOT/${arm}_s${seed}"
   if [ -f "$out/result.json" ]; then echo "[leg3] SKIP $out"; return; fi
   echo "[leg3] === $out  ($extra) ==="
   $PY scripts/train.py --task "$TASK" --n-pred-heads 5 --steps "$STEPS" \
