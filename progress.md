@@ -448,6 +448,33 @@ nulled coverage mechanism — at PLAN time MPPI avoids high-disagreement→likel
 to reward-free latent-DISAGREEMENT exploration on SPARSE dm_control (plays to the method's strength
 instead of fighting a 7-lever-robust boundary). Resolve by adversarial judge-panel, not guess.
 
+### R18 RESULT (2026-06-20) — EMA-shared disagreement IS calibrated (ladder rung 3 greenlit)
+The R18 kill-question: does a SINGLE shared EMA target collapse cross-head disagreement to noise
+(noisy-TV / mode-averaging), making latent-disagreement useless as an intrinsic signal? Built an
+N=5 PredictorEnsemble (independent heads, shared frozen encoder + EMA target) and a calibration
+diagnostic on a reward-free cartpole-balance encoder (return 990, repr_loss→0). Diagnostic = does
+ensemble disagreement D track the true 1-step latent error E, and is it higher on novel (reset+noise,
+R17-moat) than controller-visited states?
+- **seed0 PASS**: rho(D,E)=**0.91** (p=0.0), null-shuffle rho=**−0.01**, partial-rho controlling ‖z‖=
+  **0.67** (not a magnitude artefact), novel/visited median D ratio=**4.51×**. Eyes-on scatter
+  (calib_seed0.png): clean monotonic D↑→E↑; visited cluster at origin, novel fan out.
+⇒ **A single shared EMA target does NOT zero out cross-head disagreement** — it stays calibrated to
+prediction error AND to novelty. The central R18 worry is REFUTED. Greenlights ladder rung 3.
+- **Honest caveats (recorded, not glossed):** (1) cartpole-balance is trivially predictable —
+  `head_cos=1.000` and absolute D~1e-5; the heads converge to nearly one function and disagreement is
+  a STRUCTURED TINY RESIDUAL. Calibration on a genuinely HARD task (large heterogeneous error) is NOT
+  yet shown — that is exactly what the sparse-exploration campaign tests. (2) **seed1 CONFIRMS**:
+  rho=**0.95**, null=0.01, partial=**0.92**, novel/visited=**5.77×**, PASS. Cross-seed robust — not a
+  single-seed mirage (the R14/R17 trap avoided). The campaign's own novelty-tracking is the DECISIVE
+  verification; this diagnostic only clears the mechanism.
+
+⇒ **R18 VERDICT: cross-seed PASS. Build the reward-free latent-DISAGREEMENT EXPLORATION campaign
+(ladder rung 3).** Plan2Explore-style: collect data by planning to MAXIMIZE ensemble disagreement
+(task reward ignored), learn the JEPA world model from it, then zero-shot task-MPC. Arm A = reward-MPC
+baseline (no gradient on sparse reward) vs Arm B = disagreement-exploration. Primary task
+ball_in_cup-catch (sparse), replicate cartpole-swingup_sparse. Hypothesis: B cracks sparse tasks A
+can't. REAL-VERIFY = task return/success cross-seed, eyes-on rollout, red-team before recording.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
