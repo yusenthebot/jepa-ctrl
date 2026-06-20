@@ -501,12 +501,29 @@ Claim under test: as task exploration-difficulty rises, the A−B gap WIDENS (B 
     greedy short-horizon novelty bonus cannot plan the temporally-extended energy-pumping needed to
     reach the novel upright region. Plan2Explore PROPER trains a VALUE head on the intrinsic reward
     (disagreement) and plans long-horizon "go where you'll learn most" — that is the missing piece.
-- **Leg 3 — INTRINSIC-VALUE-bootstrapped disagreement exploration (the real leap): NEXT.** Build an
-  exploration value head trained with disagreement-as-reward (SARSA/TD on intrinsic reward); the
-  disagreement-MPC bootstraps with intrinsic value at the horizon ⇒ long-horizon exploration. Plus
-  instrument collection (max pole-energy reached + reward-discovery count) to VERIFY the diagnosis
-  directly: does intrinsic-value exploration reach the upright/reward region more than myopic + reward?
-- **Leg 4 — acrobot-swingup_sparse (hard stretch): after the mechanism works on cartpole.**
+- **Leg 3 — intrinsic-value Plan2Explore (3-arm reward/myopic/iv × 2 seeds), DONE.** Built (committed
+  ee6a084→): explore value head trained on normalized disagreement-as-reward (SARSA), disagreement-MPC
+  bootstraps it at the horizon (long-horizon exploration), + `reward_hits` collection instrument.
+  Cross-seed grid (final return / reward_hits over 100k collect):
+  | arm | s0 | s1 |
+  | reward | 0.0 / **1** | 278.4 / 7299 |
+  | myopic | 0.0 / 149 | 0.0 / 76 |
+  | iv | 0.0 / 751 | 0.0 / 583 |
+  - **EXPLORATION (positive, cross-seed):** disagreement out-discovers reward-MPC's failed seed by
+    ~140–750× (1 → 149/751); **intrinsic value reliably beats myopic** (751>149, 583>76, ~4–8×). The
+    myopia diagnosis + the long-horizon fix are both VALIDATED on the discovery axis.
+  - **CONTROL (honest negative, cross-seed):** zero-shot return — reward-MPC **1/2** (the lucky seed
+    that discovered AND held), disagreement arms **0/4**. More exploration did NOT yield control.
+  - **MECHANISM (well-supported):** `reward_hits` for the SUCCESS seed (reward_s1=278) is 7299 =
+    EXPLOITATION-inflated — it *held* upright (coherent swing-up-and-hold data the reward head can
+    learn). The disagreement arms found upright as TRANSIENT novelty (583–751 pass-throughs) and moved
+    on, never dwelling ⇒ the reward head learns a weak signal, zero-shot planner can't stabilize.
+    **Discovery ≠ exploitation-coherent data.** This is the new bottleneck (downstream of exploration).
+- **Leg 4 — HYBRID explore-then-exploit (reward vs hybrid, 4 seeds): RUNNING.** Hybrid = extrinsic +
+  annealed-beta intrinsic (beta 1→0): explore early so EVERY seed discovers the reward (reward_s0
+  never did), exploit late so it dwells/holds. Tests the RELIABILITY headline: hybrid swing-up on
+  more seeds than reward-MPC's 1/2. Built + committed (suite 133p).
+- **Leg 5 — acrobot-swingup_sparse (hard stretch): after the cartpole mechanism is settled.**
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
