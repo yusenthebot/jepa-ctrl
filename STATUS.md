@@ -13,17 +13,17 @@ in_flight: R19 leg2 (scripts/r19_campaign.sh cartpole-swingup_sparse 100k seeds 
   reward_s0->disagreement_s0->reward_s1->disagreement_s1, ~40min each (~2.7h). log
   runs/R19_cartpole_swingup_sparse_campaign.log.
 blocked:  none
-finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, control). leg2 cartpole-swingup_sparse s0: BOTH
-  arms = 0.0 (reward AND disagreement, all 5 eps, r_mag 0.00 = reward NEVER once seen). Frontier claim
-  NOT supported here. 2 live hypotheses: (H1) MPPI horizon=3 too short for swing-up energy-pumping +
-  value bootstrap dead w/o reward => task un-plannable; (H2) disagreement exploration never reached
-  upright. DECISIVE control = cartpole-swingup DENSE reward-MPC: solves => sparse-fail is exploration/
-  grounding; fails => planner/horizon is the bottleneck (then test longer eval horizon).
-next:     When leg2 done (waiter bu139zsb1): confirm cross-seed null, then run the DECISIVE control
-  cartpole-swingup DENSE (scripts/r19_campaign.sh cartpole-swingup 100k 0 1 — both arms; reward arm =
-  method-capability test). If dense reward-MPC SOLVES => sparse-fail = exploration/grounding (then
-  the disagreement story needs a task where exploration reaches reward + horizon-3 can execute). If
-  dense FAILS too => raise eval MPPI horizon (3->5/8) and/or longer-horizon planning; the planner is
-  the bottleneck. Re-decide leg3 (acrobot) only after the planner question is settled.
+finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, control). leg2 cartpole-swingup_sparse so far:
+  reward_s0=0.0, disagree_s0=0.0, reward_s1=278.4 (!), disagree_s1 training. reward_s1=278 REFUTES
+  H1: horizon-3 latent-MPPI CAN swing up once reward head has signal -> method capable, bottleneck is
+  STOCHASTIC sparse-reward DISCOVERY (seed-dependent: reward-MPC hit s1, missed s0). n=2 too few to
+  compare reliability. The real Plan2Explore claim = intrinsic exploration discovers sparse reward
+  MORE RELIABLY (higher fraction of seeds find it) -> likely needs a MULTI-SEED discovery-rate test.
+next:     When leg2 done (waiter bu139zsb1): read full 2x2. Given reward is seed-dependent (s0 miss /
+  s1 hit), the right test is a MULTI-SEED DISCOVERY-RATE comparison: run N=6-8 seeds per arm on
+  cartpole-swingup_sparse, metric = fraction of seeds that DISCOVER the sparse reward (final>thresh)
+  + median return. Claim: disagreement-MPC discovery-rate > reward-MPC. RED-TEAM with both-sided
+  Fisher on discovery counts. Eyes-on a swing-up rollout (reward_s1=278) to confirm REAL swing-up.
+  Build a discovery-rate driver (short-ish steps OK if reward found early). Then leg3 acrobot.
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty). flock
   serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
