@@ -203,6 +203,52 @@ class Predictor(nn.Module):
         return self.simnorm(z_pre + delta)
 
 
+class PredictorEnsemble(nn.Module):
+    """R18: N INDEPENDENT latent predictors g_phi^{1..N} for epistemic disagreement on a
+    decoder-free JEPA. Each head is a full `Predictor` with its own random init + parameters, so
+    they can be trained with independent SGD. They SHARE the (external) encoder + EMA target —
+    that sharing is exactly what the R18 calibration diagnostic interrogates: does a single smooth
+    EMA target collapse cross-head disagreement, or does it stay correlated with prediction error?
+
+    forward -> stacked predictions (N, batch, latent). disagreement -> per-sample cross-head
+    variance of the predicted next latent (the candidate epistemic-uncertainty / intrinsic-reward
+    signal). No encoder here; callers pass pre-SimNorm latents (the same interface as Predictor).
+    """
+
+    def __init__(
+        self,
+        n_heads: int,
+        latent_dim: int,
+        act_dim: int,
+        hidden: int = 256,
+        action_head_dim: int = 64,
+        simnorm_groups: int = 8,
+        latent_norm: str = "simnorm",
+    ) -> None:
+        super().__init__()
+        if n_heads < 2:
+            raise ValueError(f"need >=2 heads for disagreement, got {n_heads}")
+        self.n_heads = int(n_heads)
+        self.heads = nn.ModuleList(
+            Predictor(latent_dim, act_dim, hidden, action_head_dim, simnorm_groups, latent_norm)
+            for _ in range(n_heads)
+        )
+
+    def forward(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Returns (n_heads, batch, latent): every head's predicted next SimNorm latent."""
+        return torch.stack([h(z_pre, action) for h in self.heads], dim=0)
+
+    def mean_prediction(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Ensemble-mean predicted next latent, (batch, latent)."""
+        return self(z_pre, action).mean(dim=0)
+
+    def disagreement(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Per-sample epistemic disagreement: variance across heads of the predicted next latent,
+        averaged over latent dims. Returns (batch,). Zero iff all heads agree exactly."""
+        preds = self(z_pre, action)  # (N, B, LD)
+        return preds.var(dim=0, unbiased=False).mean(dim=-1)  # (B,)
+
+
 class DistHead(nn.Module):
     """Distributional scalar head (reward or value). Predicts logits over `bins` evenly-spaced
     locations in symlog space [vmin, vmax]; to_scalar = symexp(softmax-weighted bin centers).
