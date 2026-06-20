@@ -387,6 +387,21 @@ Strongly pointing to an INTRINSIC gait-acquisition limit of this minimal method 
 dynamics. R16 = the last cheap training lever: does MORE TRAINING (300k vs 200k, "undertrained"
 hypothesis) lower collapse? If null too → record the bimodal collapse as a characterized method boundary.
 
+### R16 RESULT (2026-06-19) — more training REFUTED (6th lever); bimodal collapse = METHOD BOUNDARY
+300k reward-free raw quad, collapse_rate (20 eps, scripts/collapse_eval.py): s0=**0.85** (17/20),
+s1=**0.80** (16/20) — vs 200k base 0.65/0.75. **More training made collapse WORSE, not better** —
+the "undertrained" hypothesis is refuted (6th lever). Instructive direction: at 300k the good basin
+sharpens (s1 good eps razor-clean ~457) but the policy catches a gait LESS often — consistent with
+the replay buffer narrowing toward good-gait trajectories late in training, so BAD-START coverage
+shrinks. ⇒ **CONCLUSION (well-powered, honest): the 3D quadruped bimodal collapse is an INTRINSIC
+gait-acquisition-reliability limit of this minimal JEPA-MPPI method**, robust to SIX refuted levers
+(capacity R12 · representation R13 · planner-search R13 · eval-action-smoothness R14 · exploration-
+floor R15 · training-amount R16). It is a **bad-state-coverage / recover-from-bad-initial-conditions**
+problem, NOT a tunable knob. The honest 3D result: reward-free latent-MPPI controls the quadruped
+well WHEN it catches a gait (good-basin ~400-500) but only ~20-35% of episodes; reliability is the
+open hard problem. NEXT = the DIVERGE-chosen frontier direction (a NON-cheap method — likely
+uncertainty/disagreement-driven exploration to systematically cover failure states — or a fresh rung).
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
