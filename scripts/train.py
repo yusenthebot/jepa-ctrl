@@ -16,6 +16,7 @@ import fcntl
 import json
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,7 @@ from jepa_ctrl.envs import DMCEnv
 from jepa_ctrl.metrics import collapse_diagnostics, is_collapsed, plot_sample_efficiency
 from jepa_ctrl.model import ModelConfig, WorldModel
 from jepa_ctrl.model.jepa_controller import JepaController
-from jepa_ctrl.model.mppi import eval_mppi
+from jepa_ctrl.model.mppi import eval_mppi, train_mppi
 from jepa_ctrl.model.trainer import TrainConfig, Trainer
 from jepa_ctrl.render import contact_sheet, save_mp4
 from jepa_ctrl.seeding import set_seed
@@ -155,6 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="R17: start a fraction of episodes from banked near-fall states")
     p.add_argument("--reset-p", type=float, default=0.3,
                    help="probability a reset draws a banked near-fall state (curriculum on)")
+    # R18+ Plan2Explore disagreement exploration. --n-pred-heads>=2 builds the ensemble;
+    # --explore-objective=disagreement collects data by maximising ensemble disagreement (task
+    # reward IGNORED at collection — pure intrinsic). Eval always plans on reward (zero-shot task).
+    p.add_argument("--n-pred-heads", type=int, default=1,
+                   help="independent predictor heads for epistemic disagreement (1 = no ensemble)")
+    p.add_argument("--explore-objective", default="reward", choices=["reward", "disagreement"],
+                   help="data-collection planning objective (disagreement => Plan2Explore)")
     p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
     p.add_argument("--distractor", action="store_true",
                    help="composite a time-varying background distractor (pixels only)")
@@ -216,15 +224,19 @@ def main() -> None:
     if a.pixels:
         latent_dim = a.latent_dim or 256
         mcfg = ModelConfig(obs_dim=int(np.prod(env.obs_shape)), act_dim=env.act_dim,
-                           latent_dim=latent_dim, latent_norm=latent_norm,
+                           latent_dim=latent_dim, latent_norm=latent_norm, n_pred_heads=a.n_pred_heads,
                            encoder_type="cnn", obs_shape=tuple(int(x) for x in env.obs_shape))
     else:
         latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
         mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
-                           latent_norm=latent_norm)
+                           latent_norm=latent_norm, n_pred_heads=a.n_pred_heads)
     wm = WorldModel(mcfg)
     tcfg = train_config_from_args(a, pixels=a.pixels)
-    trainer = Trainer(wm, tcfg, env.act_low, env.act_high, device=device)
+    # data-collection planner objective: reward (default) or disagreement (Plan2Explore). Eval is
+    # always reward-MPC (run_eval/JepaController use eval_mppi()), so the disagreement arm is a
+    # genuine zero-shot task evaluation of a reward-free-explored world model.
+    train_cfg_mppi = replace(train_mppi(), objective=a.explore_objective)
+    trainer = Trainer(wm, tcfg, env.act_low, env.act_high, mppi_cfg=train_cfg_mppi, device=device)
     nparam = sum(q.numel() for q in wm.parameters() if q.requires_grad) / 1e6
     print(f"device={device} task={a.task} grounding={a.grounding} "
           f"latent={latent_dim}/{latent_norm} params={nparam:.2f}M "

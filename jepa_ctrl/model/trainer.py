@@ -299,6 +299,14 @@ class Trainer:
             loss = loss + cfg.sigreg_coef * sr_loss
             metrics["sigreg"] = float(sr_loss.detach())
 
+        # R18+ disagreement ensemble: trained on DETACHED latents, so it adds an independent loss
+        # term that updates ONLY the ensemble params (the representation is unchanged vs the
+        # no-ensemble run). Skipped under freeze_repr (no learning at all).
+        if not cfg.freeze_repr and self.model.predictor_ensemble is not None:
+            ens_loss = self.model.ensemble_consistency_loss_from(obs_seq, action_seq, latents)
+            loss = loss + mcfg.consistency_coef * ens_loss
+            metrics["ensemble"] = float(ens_loss.detach())
+
         self.opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(

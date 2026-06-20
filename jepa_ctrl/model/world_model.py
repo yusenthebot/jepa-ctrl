@@ -14,6 +14,7 @@ from .nets import (
     Encoder,
     InverseDynamicsHead,
     Predictor,
+    PredictorEnsemble,
     symlog,
 )
 
@@ -53,6 +54,16 @@ class WorldModel(nn.Module):
         self._freeze(self.target_encoder)
 
         self.predictor = Predictor(ld, ad, cfg.pred_hidden, cfg.action_head_dim, g, latent_norm=ln)
+        # R18+ epistemic-disagreement ensemble (Plan2Explore intrinsic reward). Built only when
+        # n_pred_heads>=2; trained on DETACHED latents so it estimates uncertainty without
+        # reshaping the shared encoder/predictor (the arms differ only in the planning objective).
+        self.predictor_ensemble: PredictorEnsemble | None = (
+            PredictorEnsemble(
+                cfg.n_pred_heads, ld, ad, cfg.pred_hidden, cfg.action_head_dim, g, latent_norm=ln
+            )
+            if cfg.n_pred_heads >= 2
+            else None
+        )
         self.inverse_dynamics_head = InverseDynamicsHead(ld, ad, cfg.pred_hidden)
 
         self.reward_head = DistHead(ld, ad, cfg.pred_hidden, cfg.bins, cfg.vmin, cfg.vmax, num_q=1)
@@ -152,6 +163,43 @@ class WorldModel(nn.Module):
         """
         latents = self.rollout_latents(obs_seq, action_seq)  # [z_0, z_hat_1..z_hat_H]
         return self.consistency_loss_from(obs_seq, action_seq, latents)
+
+    # --- epistemic disagreement (Plan2Explore intrinsic reward) -------------------
+    def ensemble_disagreement(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Per-sample cross-head variance of the predicted next latent, (batch,). The intrinsic
+        reward for disagreement-driven exploration. Requires n_pred_heads>=2."""
+        if self.predictor_ensemble is None:
+            raise RuntimeError("ensemble_disagreement requires n_pred_heads>=2 (no ensemble built)")
+        return self.predictor_ensemble.disagreement(z_pre, action)
+
+    def ensemble_consistency_loss_from(
+        self,
+        obs_seq: torch.Tensor,
+        action_seq: torch.Tensor,
+        latents: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """One-step consistency for EACH ensemble head over the shared rollout, on DETACHED
+        inputs and stop-grad EMA targets — so the loss updates ONLY the ensemble params and the
+        representation stays governed by the main consistency loss (identical across arms).
+
+        For k=1..H every head predicts f_xi(o_{t+k}) from (detach(latents[k-1]), a_{t+k-1});
+        L = sum_k rho^k * mean_heads smooth_l1(head_pred, target). Independently-initialised heads
+        converge where data is dense (low disagreement) and diverge off-distribution (high
+        disagreement) — the epistemic signal the R18 diagnostic validated (rho 0.91/0.95)."""
+        if self.predictor_ensemble is None:
+            raise RuntimeError("ensemble_consistency_loss requires n_pred_heads>=2")
+        cfg = self.cfg
+        h = action_seq.shape[0]
+        loss = obs_seq.new_zeros(())
+        for k in range(1, h + 1):
+            z_in = latents[k - 1].detach()  # measure-don't-reshape: no grad to encoder/predictor
+            target = self.encode_target(obs_seq[k])  # stop-grad inside
+            preds = self.predictor_ensemble(z_in, action_seq[k - 1])  # (N, B, LD)
+            per_head = F.smooth_l1_loss(
+                preds, target.unsqueeze(0).expand_as(preds), reduction="none"
+            ).mean(dim=(1, 2))  # (N,)
+            loss = loss + (cfg.rho**k) * per_head.mean()
+        return loss
 
     # --- reconstruction baseline (decoder arm only) -------------------------------
     def decode(self, z: torch.Tensor) -> torch.Tensor:

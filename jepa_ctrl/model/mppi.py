@@ -27,12 +27,16 @@ class MPPIConfig:
     init_std: float = 1.0
     corr: float = 0.0  # temporal correlation of the action noise in [0,1)
     min_q_subset: int = 2  # min-of-subset size from the value ensemble (pessimism)
+    objective: str = "reward"  # "reward" (extrinsic + terminal value) | "disagreement" (intrinsic
+    # Plan2Explore exploration: maximise discounted sum of ensemble disagreement; task reward unused)
 
     def __post_init__(self) -> None:
         if self.num_elites > self.num_samples:
             raise ValueError("num_elites cannot exceed num_samples")
         if not 0.0 <= self.corr < 1.0:
             raise ValueError("corr must be in [0, 1)")
+        if self.objective not in ("reward", "disagreement"):
+            raise ValueError(f"objective must be 'reward' or 'disagreement', got {self.objective!r}")
 
 
 def train_mppi() -> MPPIConfig:
@@ -76,7 +80,9 @@ class MPPIPlanner:
 
     @torch.no_grad()
     def _score(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-        """actions: (H, N, act_dim). Returns (N,) discounted return + terminal value."""
+        """actions: (H, N, act_dim). Returns (N,) trajectory score under cfg.objective."""
+        if self.cfg.objective == "disagreement":
+            return self._score_disagreement(z0_pre, actions)
         cfg = self.cfg
         preds = self.model.rollout(z0_pre, actions)  # H x (N, latent)
         ret = z0_pre.new_zeros(actions.shape[1])
@@ -90,6 +96,20 @@ class MPPIPlanner:
         k = min(cfg.min_q_subset, v_scalar.shape[0])
         v_term = v_scalar.topk(k, dim=0, largest=False).values.amin(0)
         return ret + (cfg.gamma ** cfg.horizon) * v_term
+
+    @torch.no_grad()
+    def _score_disagreement(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+        """Intrinsic Plan2Explore score: discounted sum of ensemble disagreement along the
+        rollout. The dynamics are the SAME shared predictor (fair vs the reward arm); only the
+        objective differs — seek states where the heads disagree (= high model uncertainty =
+        novel). Task reward/value are NOT consulted. actions: (H, N, act_dim) -> (N,)."""
+        cfg = self.cfg
+        score = z0_pre.new_zeros(actions.shape[1])
+        z_in = z0_pre
+        for h in range(cfg.horizon):
+            score = score + (cfg.gamma**h) * self.model.ensemble_disagreement(z_in, actions[h])
+            z_in = self.model.predictor(z_in, actions[h])  # open-loop, shared dynamics
+        return score
 
     @torch.no_grad()
     def plan(self, obs: torch.Tensor) -> torch.Tensor:

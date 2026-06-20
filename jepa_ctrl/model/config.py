@@ -33,6 +33,12 @@ class ModelConfig:
     action_head_dim: int = 64
     pred_hidden: int = 256
     latent_norm: str = "simnorm"  # "simnorm" (default) | "none" (RAW latent, for the SIGReg arm)
+    # R18+: N independent predictor heads for epistemic disagreement (Plan2Explore-style intrinsic
+    # reward). Default 1 = no ensemble (byte-identical to every prior run). >=2 builds a
+    # PredictorEnsemble trained alongside the main predictor on DETACHED latents (it MEASURES
+    # uncertainty, it does not reshape the representation — so the encoder is identical across the
+    # reward-MPC and disagreement-exploration arms; only the planning objective differs).
+    n_pred_heads: int = 1
 
     def __post_init__(self) -> None:
         if self.latent_norm not in ("simnorm", "none"):
@@ -46,6 +52,8 @@ class ModelConfig:
                 f"latent_dim {self.latent_dim} not divisible by "
                 f"simnorm_groups {self.simnorm_groups}"
             )
+        if self.n_pred_heads < 1:
+            raise ValueError(f"n_pred_heads must be >= 1, got {self.n_pred_heads}")
         if self.bins < 2:
             raise ValueError(f"bins must be >= 2, got {self.bins}")
         if self.vmax <= self.vmin:
