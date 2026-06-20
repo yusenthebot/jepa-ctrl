@@ -10,8 +10,12 @@ state:    R18 DONE + recorded. PredictorEnsemble (N independent latent heads, sh
   D~1e-5) -> hard-task calibration is the campaign's job. test_ensemble.py 6p green. ball_in_cup-catch
   + cartpole-swingup_sparse load OK via suite.load.
 in_flight: R19 leg3 (scripts/r19_leg3.sh cartpole-swingup_sparse 100k seeds 0,1). 6 runs SERIALIZED
-  (~4.4h): per seed reward -> myopic -> iv. log runs/R19L3_campaign.log. Build committed (intrinsic
-  value head + long-horizon bootstrap + reward_hits instrument, suite 130p).
+  (~4.4h): per seed reward -> myopic -> iv. log runs/R19L3_campaign.log.
+PRELIM:   reward_s0 reward_hits=1 (final 0); myopic_s0 reward_hits~142 mid-run (!) -> disagreement
+  exploration reaches the upright/reward region ~140x MORE than reward-MPC. BUT myopic final return
+  was 0 (leg2). => exploration is NOT the bottleneck; DOWNSTREAM (reward-head learning + horizon-3
+  eval-planner exploitation of sparse transient hits) is. Reframes leg2. HOLD headline until all 6
+  runs done (iv hits? returns across arms? reward_s1 hits?).
 blocked:  none
 finding:  leg2 cartpole-swingup_sparse FINAL 2x2: reward {s0 0.0, s1 278.4}, disagree {s0 0.0, s1 0.0}.
   Disagreement did NOT beat reward (0/2 vs 1/2 discover). EYES-ON reward_s1 = GENUINE swing-up =>
