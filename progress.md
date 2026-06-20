@@ -402,6 +402,28 @@ well WHEN it catches a gait (good-basin ~400-500) but only ~20-35% of episodes; 
 open hard problem. NEXT = the DIVERGE-chosen frontier direction (a NON-cheap method — likely
 uncertainty/disagreement-driven exploration to systematically cover failure states — or a fresh rung).
 
+### R17 — COVER-TO-RECOVER: frontier attack on the 3D collapse (DIVERGE-chosen, 2026-06-19)
+A 4-scout DIVERGE + Opus judge chose meta-option X (attack the now-well-characterized collapse with a
+NON-cheap method) over pivoting. **Direction:** predictor-ensemble epistemic uncertainty on the
+reward-free raw-latent JEPA, used 3 ways — (a) disagreement-PESSIMISM inside MPPI `_score`, (b)
+disagreement-targeted HARVEST of near-fall states, (c) those states INJECTED as a fraction p≈0.3 of
+training-episode RESETS (reset-curriculum). **Falsifiable claim:** cuts quadruped-walk collapse_rate
+~0.70→≤0.45 cross-seed (0,1,2) WITHOUT lowering good_basin_mean. Frontier (not reproduction): no
+published work puts ensemble-disagreement pessimism + reset-curriculum on a decoder-free raw-latent
+EMA JEPA latent-MPPI; the science question = "is the reward-FREE bimodal collapse a bad-start-coverage
+problem solvable WITHOUT reward via epistemic uncertainty, or does the noisy-TV trap (falling states
+ARE highest-disagreement on unstable dynamics) make it unsolvable?" — publishable either way.
+**FIRST EXPERIMENT (cheapest discriminating probe, NO ensemble):** reset-curriculum ALONE — harvest
+low-return-tail states from the buffer, inject as p=0.3 of resets; train reward-free raw quad 200k
+seeds{0,1}; measure collapse_rate (scripts/collapse_eval.py, 20 eps, THRESH=150) + good_basin vs base
+~0.70/0.80. If <0.55 Fisher-sig → coverage hypothesis confirmed → build the full ensemble (pessimism +
+disagreement-targeted harvest). **KILL→PIVOT:** if the full 3-mechanism ablation is null AND
+disagreement-as-bonus SEEKS collapse (noisy-TV confirmed) → that's the 7th refuted lever + a mechanistic
+explanation (coverage can't be bought on unstable dynamics without reward) → pivot to runner-up:
+reward-free latent-DISAGREEMENT exploration on SPARSE dm_control (ball_in_cup/cartpole-sparse/acrobot)
+where reward-MPC has no gradient. Build: envs.py get/set_state + reset(from_state=); trainer harvest
+bank + inject; ~50-80 LOC, TDD sim-free. RED-TEAM every result (valley check, both-metrics, seed agree).
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
