@@ -424,6 +424,30 @@ reward-free latent-DISAGREEMENT exploration on SPARSE dm_control (ball_in_cup/ca
 where reward-MPC has no gradient. Build: envs.py get/set_state + reset(from_state=); trainer harvest
 bank + inject; ~50-80 LOC, TDD sim-free. RED-TEAM every result (valley check, both-metrics, seed agree).
 
+### R17 RESULT (2026-06-20) — reset-curriculum NULL = 7th refuted lever; coverage-injection does NOT fix collapse
+Built (TDD, suite green 104p): envs.py get/set_state + reset(from_state=) — **live quad roundtrip
+VERIFIED** (state_restored/reproducible/shape_ok/differs_from_fresh). NearFallBank reservoir harvests
+low-return-tail physics states; injected p=0.3 of resets. Trained reward-free RAW quad 200k seeds{0,1}
+WITH reset-curriculum; authoritative MATCHED red-team (scripts/r17_redteam.py) vs R11 rawcons base
+(same config, NO reset-curriculum), identical 20-ep collapse_eval, fixed eval seeds.
+**Verdict NOT_CONFIRMED** (runs/R17_resetcurr/REDTEAM.json):
+  - base collapse_rate **0.75** (30/40) vs treat **0.70** (28/40) — a 2-episode diff.
+  - Fisher p_treat_less=**0.40** (≫0.05); two-sided 0.80.
+  - **seeds DISAGREE on sign**: s0 14→11 (helps +3), s1 16→17 (hurts −1) → seed_verdict=inconclusive.
+    The R14 trap exactly: a single-seed look at s0 would have falsely claimed a win.
+  - good_basin intact (treat 433 ≥ base 422) and valley sound (bimodal, thresh-in-valley) — the metric
+    is VALID; the effect is a real ~zero, not a measurement artefact. Eyes-on render = real MuJoCo
+    rollout (return 59.7 collapse ep), not faked.
+⇒ **Injecting bad-start (near-fall) states into the reset distribution does NOT improve recovery /
+reduce collapse.** Coverage-injection is the **7th refuted lever** (capacity·repr·planner·eval-smooth·
+explore-floor·training-amount·**reset-curriculum coverage**). Strengthens R16's conclusion: the 3D
+quad bimodal collapse is an INTRINSIC gait-acquisition-reliability limit of minimal JEPA-MPPI, NOT a
+coverage problem — seeing more bad states during training doesn't teach recovery without reward.
+**NEXT = Decision Workflow** (genuine fork): full ensemble-PESSIMISM (untested, distinct from the
+nulled coverage mechanism — at PLAN time MPPI avoids high-disagreement→likely-fall actions) vs PIVOT
+to reward-free latent-DISAGREEMENT exploration on SPARSE dm_control (plays to the method's strength
+instead of fighting a 7-lever-robust boundary). Resolve by adversarial judge-panel, not guess.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
