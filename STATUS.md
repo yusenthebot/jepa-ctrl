@@ -13,9 +13,11 @@ in_flight: R19 leg2 (scripts/r19_campaign.sh cartpole-swingup_sparse 100k seeds 
   reward_s0->disagreement_s0->reward_s1->disagreement_s1, ~40min each (~2.7h). log
   runs/R19_cartpole_swingup_sparse_campaign.log.
 blocked:  none
-finding:  leg1 ball_in_cup DONE: Arm A 959.0 ≈ Arm B 956.3 — both SOLVE it (easy-sparse, reward-MPC
-  does NOT flounder). Non-discriminating; kept as easy-end control (disagreement exploration matches
-  reward-MPC). The frontier claim needs a HARD-exploration task (leg2/leg3).
+finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, non-discriminating control). leg2 cartpole-
+  swingup_sparse: reward_s0 (Arm A) = 0.0 ALL 5 eps, r_mag 0.00 — reward-MPC TOTALLY FAILS (never
+  finds sparse upright from hanging rest = the predicted hard-exploration failure). Arm B (disagree)
+  training now. MUST run cartpole-swingup DENSE control to disambiguate exploration-failure vs method-
+  incapacity-at-swingup before any headline (note: cartpole-BALANCE got 990 R18, so body is controllable).
 next:     When leg2 done: compare A vs B zero-shot return cross-seed
   (runs/R19_cartpole_swingup_sparse/{reward,disagreement}_s{0,1}/result.json). RED-TEAM (matched eval,
   per-seed sign, both-sided Fisher), EYES-ON the rollout renders. Attribution control: if Arm A is
