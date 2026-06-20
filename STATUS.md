@@ -1,5 +1,5 @@
 # STATUS — main
-updated: 2026-06-19T13:06 · loop 15 (IN-FLIGHT, supervisor-driven round)
+updated: 2026-06-19 · loop 15 (IN-FLIGHT, re-launched after the pause)
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
 phase:    green/execute — R15 scaffold COMMITTED (47f2889); 4 training runs in flight (background)
 owns:     whole repo (single session; supervisor evolving-loop.sh drives cadence)
@@ -11,8 +11,10 @@ state:    R15 = TRAINING-side lever for 3D bimodal collapse (only cause left aft
   committed CLI knob + eval + tests (resume invariant restored); verified knob wired end-to-end
   (_explore_std anneal trainer.py:134) + tests green CPU + ruff clean. Did NOT start a 2nd sim
   (serialize; 16GB/64GB).
-in_flight: bash /tmp/r15_train.sh -> base_s0 RUNNING (~13min in @13:04); batch base_s0,base_s1,
-  treat_s0,treat_s1 serial ~37min each, ALL-DONE ETA ~15:20. log runs/R15_explore_train.log.
+in_flight: R15 training RE-LAUNCHED after the pause interrupted the original (only base_s0 had
+  started, 0 ckpts). Recipe now DURABLE: scripts/r15_train.sh (was /tmp). Batch bh1fwzuvj
+  (harness-tracked): base_s0,base_s1,treat_s0,treat_s1 serial, ~40min each, ~2.7h. log
+  runs/R15_explore_train.log. On completion -> the pre-registered collapse eval below.
 next:     when 4 ckpts land: run scripts/r15_collapse.py --episodes 20. PRE-REGISTERED RED-TEAM
   (do NOT trust collapse_rate without these): (1) THRESH=150 verified in-gap for R11 BASE only;
   treat dist may shift -> plot histogram of `eps` per cell, confirm 150 sits in the valley, eyes-on
