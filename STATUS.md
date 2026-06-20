@@ -1,20 +1,21 @@
 # STATUS — main
-updated: 2026-06-19 · loop 17
+updated: 2026-06-20 · loop 17
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    frontier — R17 COVER-TO-RECOVER: attack the 3D bimodal collapse via epistemic coverage
+phase:    review — R17 COVER-TO-RECOVER probe RUNNING (reset-curriculum alone, the cheap discriminator)
 owns:     whole repo (single session)
-state:    3D quadruped collapse is a CHARACTERIZED METHOD BOUNDARY — bimodal (catch-a-gait ~400-500
-  OR collapse ~40), collapse_rate ~0.70 (R11/R15), arm-independent, robust to 6 refuted levers
-  (capacity/repr/planner/eval-smooth/explore-floor/training-amount; R16 300k made it WORSE 0.80-0.85
-  = bad-start coverage shrinks as buffer narrows to good-gait). DIVERGE+judge chose to ATTACK it.
-  R17 = COVER-TO-RECOVER: predictor-ensemble disagreement -> MPPI pessimism + near-fall harvest +
-  reset-curriculum injection. FIRST PROBE (cheap, no ensemble): reset-curriculum ALONE.
-in_flight: building the reset-curriculum probe (envs.py get/set_state + reset(from_state=); trainer
-  low-return-tail state bank + inject p=0.3 of resets; --reset-curriculum CLI). TDD sim-free.
-next:     verify build (env state roundtrip + harvest/inject) -> run reward-free raw quad 200k seeds{0,1}
-  --reset-curriculum -> collapse_eval 20 eps vs base 0.70/0.80, Fisher + good_basin + valley + eyes-on.
-  If <0.55 sig -> build full ensemble (pessimism + disagreement-harvest). If null -> ensemble-pessimism
-  lead; if whole attack null + noisy-TV confirmed -> PIVOT to reward-free disagreement-explore on SPARSE
-  tasks (ball_in_cup/cartpole-sparse/acrobot). RED-TEAM all (both-metrics, seed agree).
-notes:    PIN mujoco==3.8.1. .venv torch cu128. MUJOCO_GL=egl. 3D metric = collapse_rate(>=20 eps,
-  scripts/collapse_eval.py) + good_basin (single-eval is bimodal noise). progress.md=record; LOOP_PROMPT.md=directive.
+state:    R17 build DONE + verified: envs get/set_state + reset(from_state=) — LIVE roundtrip PASS on
+  quadruped (state_restored/reproducible/shape_ok/differs_from_fresh). NearFallBank reservoir +
+  inject p=0.3. Full suite GREEN 104p/1skip. ALSO fixed a 2nd OOM bomb this session: pixel replay
+  buffer reused the STATE default capacity (1e6 -> ~127GB at pixel slot) — clamped to 8GiB byte
+  budget (pixel_buffer_capacity) + allocation-free estimate_nbytes; rule -> performance.md
+  (incl. ulimit -v is WRONG for torch/CUDA — CUDA reserves tens of GB VIRTUAL).
+in_flight: reward-free RAW quad 200k reset-curriculum probe. seed0 RUNNING (~5k steps/min, ~40min/seed);
+  detached driver scripts/r17_probe.sh (NOT harness-tracked) waits seed0 -> trains seed1
+  (flock-serialized) -> collapse_eval both (20 eps THRESH=150) -> runs/R17_resetcurr/RESULT.txt.
+blocked:  none
+next:     when RESULT.txt ready: RED-TEAM (both-metrics collapse_rate+good_basin, seed agree, valley
+  check) + eyes-on render. If collapse_rate <0.55 Fisher-sig vs base 0.65-0.85 -> coverage CONFIRMED
+  -> build full ensemble (disagreement pessimism + harvest). If null -> ensemble-pessimism lead;
+  whole attack null + noisy-TV -> PIVOT to reward-free disagreement-explore on SPARSE tasks.
+notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty — empty drops
+  jepa_ctrl). flock serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
