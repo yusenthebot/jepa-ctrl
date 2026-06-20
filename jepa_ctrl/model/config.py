@@ -39,6 +39,10 @@ class ModelConfig:
     # uncertainty, it does not reshape the representation — so the encoder is identical across the
     # reward-MPC and disagreement-exploration arms; only the planning objective differs).
     n_pred_heads: int = 1
+    # R19 leg3 (Plan2Explore proper): an INTRINSIC value head trained with ensemble disagreement as
+    # the reward, so the disagreement-MPC bootstraps long-horizon "expected future novelty" at the
+    # plan horizon instead of greedily summing 1-step disagreement. Requires n_pred_heads>=2.
+    explore_value: bool = False
 
     def __post_init__(self) -> None:
         if self.latent_norm not in ("simnorm", "none"):
@@ -54,6 +58,8 @@ class ModelConfig:
             )
         if self.n_pred_heads < 1:
             raise ValueError(f"n_pred_heads must be >= 1, got {self.n_pred_heads}")
+        if self.explore_value and self.n_pred_heads < 2:
+            raise ValueError("explore_value requires n_pred_heads>=2 (disagreement is its reward)")
         if self.bins < 2:
             raise ValueError(f"bins must be >= 2, got {self.bins}")
         if self.vmax <= self.vmin:

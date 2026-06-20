@@ -191,6 +191,10 @@ class Trainer:
             )
         self.opt = torch.optim.Adam(_param_groups(model, cfg))
         self.step = 0
+        # R19 leg3 instrumentation: count collection steps that hit reward>0 (= reached the reward
+        # region). Task-agnostic exploration metric — directly tests "did exploration discover the
+        # sparse reward", independent of whether the eval planner can exploit it.
+        self.reward_hits = 0
         # R17 reset-curriculum state (inert unless cfg.reset_curriculum). The bank harvests
         # physics states from low-return episodes; _ep_states / _ep_return track the CURRENT
         # episode as collect feeds note_step(). _rc_rng gates the reset draw deterministically.
@@ -306,6 +310,22 @@ class Trainer:
             ens_loss = self.model.ensemble_consistency_loss_from(obs_seq, action_seq, latents)
             loss = loss + mcfg.consistency_coef * ens_loss
             metrics["ensemble"] = float(ens_loss.detach())
+            # Plan2Explore intrinsic value: disagreement-as-reward SARSA TD on DETACHED latents
+            # (measure-don't-reshape — the intrinsic value head never touches the representation).
+            if self.model.explore_value_head is not None:
+                z0d = latents[0].detach()
+                with torch.no_grad():
+                    disag0 = self.model.ensemble_disagreement(z0d, action_seq[0])  # (B,)
+                    self.model.update_disag_scale(disag0)
+                    r_int = disag0 / (self.model.disag_scale + 1e-8)  # normalized intrinsic reward
+                    zn = self.model.encode(obs_seq[1])
+                    ev_t = self.model.target_explore_value_head.logits(zn, action_seq[1])
+                    ev_t = self.model.target_explore_value_head.to_scalar(ev_t).mean(0)  # optimistic
+                    iv_tgt = r_int + cfg.gamma * ev_t
+                iv_loss = self.model.intrinsic_value_loss(z0d, action_seq[0], iv_tgt)
+                loss = loss + mcfg.rv_coef * iv_loss
+                metrics["intrinsic_value"] = float(iv_loss.detach())
+                metrics["disag_scale"] = float(self.model.disag_scale)
 
         self.opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -377,6 +397,8 @@ class Trainer:
         next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=self.device)
         self.buffer.add(obs, a, reward, next_obs, done)
         self.step += 1
+        if reward > 0.0:
+            self.reward_hits += 1
         self.note_step(pre_state, reward, done)
         return next_obs, float(reward), bool(done)
 

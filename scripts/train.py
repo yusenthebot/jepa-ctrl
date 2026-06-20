@@ -163,6 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="independent predictor heads for epistemic disagreement (1 = no ensemble)")
     p.add_argument("--explore-objective", default="reward", choices=["reward", "disagreement"],
                    help="data-collection planning objective (disagreement => Plan2Explore)")
+    p.add_argument("--intrinsic-value", action="store_true",
+                   help="Plan2Explore proper: train an intrinsic value head on disagreement-reward "
+                        "and bootstrap it at the plan horizon (long-horizon exploration). Needs "
+                        "--n-pred-heads>=2 and --explore-objective disagreement.")
     p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
     p.add_argument("--distractor", action="store_true",
                    help="composite a time-varying background distractor (pixels only)")
@@ -225,11 +229,13 @@ def main() -> None:
         latent_dim = a.latent_dim or 256
         mcfg = ModelConfig(obs_dim=int(np.prod(env.obs_shape)), act_dim=env.act_dim,
                            latent_dim=latent_dim, latent_norm=latent_norm, n_pred_heads=a.n_pred_heads,
+                           explore_value=a.intrinsic_value,
                            encoder_type="cnn", obs_shape=tuple(int(x) for x in env.obs_shape))
     else:
         latent_dim = a.latent_dim or (256 if env.obs_dim > 8 else 128)
         mcfg = ModelConfig(obs_dim=env.obs_dim, act_dim=env.act_dim, latent_dim=latent_dim,
-                           latent_norm=latent_norm, n_pred_heads=a.n_pred_heads)
+                           latent_norm=latent_norm, n_pred_heads=a.n_pred_heads,
+                           explore_value=a.intrinsic_value)
     wm = WorldModel(mcfg)
     tcfg = train_config_from_args(a, pixels=a.pixels)
     # data-collection planner objective: reward (default) or disagreement (Plan2Explore). Eval is
@@ -280,8 +286,8 @@ def main() -> None:
         if trainer.step % a.eval_every == 0:
             eval_hook(trainer.step)
         if trainer.step % 200 == 0 and losses:
-            print(f"  step {trainer.step:6d}  repr_loss(mean200) {np.mean(losses[-200:]):.4f}",
-                  flush=True)
+            print(f"  step {trainer.step:6d}  repr_loss(mean200) {np.mean(losses[-200:]):.4f} "
+                  f"reward_hits {trainer.reward_hits}", flush=True)
 
     # post-seed wall-clock + 100k ETA
     if t_postseed is not None:
@@ -310,6 +316,8 @@ def main() -> None:
     (out / "result.json").write_text(json.dumps(
         {"task": a.task, "seed": a.seed, "steps": trainer.step, "curve": curve,
          "collapse_log": collapse_log, "final_return": ret, "latent_dim": latent_dim,
+         "reward_hits": trainer.reward_hits, "explore_objective": a.explore_objective,
+         "intrinsic_value": bool(a.intrinsic_value),
          "wall_clock_min": (time.time() - t_start) / 60}, indent=2))
     env.close()
     torch.save(wm.state_dict(), out / "model.pt")

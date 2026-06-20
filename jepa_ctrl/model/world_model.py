@@ -73,6 +73,22 @@ class WorldModel(nn.Module):
         self.target_value_head = copy.deepcopy(self.value_head)
         self._freeze(self.target_value_head)
 
+        # R19 leg3 INTRINSIC (exploration) value head: same DistHead, but trained on ensemble
+        # disagreement as the reward => its scalar is the expected DISCOUNTED FUTURE disagreement.
+        # disag_scale (running EMA of mean disagreement) normalises the tiny raw disagreement to O(1)
+        # so the distributional head + planner share one consistent unit. Always registered (inert
+        # when no explore head) so checkpoints round-trip regardless of the flag.
+        self.register_buffer("disag_scale", torch.ones(()))
+        if cfg.explore_value:
+            self.explore_value_head: DistHead | None = DistHead(
+                ld, ad, cfg.pred_hidden, cfg.bins, cfg.vmin, cfg.vmax, num_q=cfg.num_q
+            )
+            self.target_explore_value_head: DistHead | None = copy.deepcopy(self.explore_value_head)
+            self._freeze(self.target_explore_value_head)
+        else:
+            self.explore_value_head = None
+            self.target_explore_value_head = None
+
         # Decoder is built ONLY for the reconstruction baseline (Dreamer-style observation
         # model). The JEPA arm (latent consistency) never owns one — that is the structural
         # difference the distractor head-to-head exploits. Requires the CNN pixel encoder.
@@ -171,6 +187,30 @@ class WorldModel(nn.Module):
         if self.predictor_ensemble is None:
             raise RuntimeError("ensemble_disagreement requires n_pred_heads>=2 (no ensemble built)")
         return self.predictor_ensemble.disagreement(z_pre, action)
+
+    def normalized_disagreement(self, z_pre: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Disagreement divided by the running scale (disag_scale) so the intrinsic reward is O(1)
+        and shares one unit with the intrinsic value head + planner. Raw disagreement is tiny and
+        task-dependent (R18: ~1e-5 on easy cartpole); a fixed distributional head can't resolve it,
+        hence the running normalisation."""
+        return self.ensemble_disagreement(z_pre, action) / (self.disag_scale + 1e-8)
+
+    @torch.no_grad()
+    def update_disag_scale(self, batch_disagreement: torch.Tensor, tau: float = 0.99) -> None:
+        """EMA-track the mean raw disagreement so normalisation adapts as the ensemble learns."""
+        m = batch_disagreement.detach().mean()
+        self.disag_scale.mul_(tau).add_(m, alpha=1.0 - tau)
+
+    def intrinsic_value_loss(
+        self, z0: torch.Tensor, action0: torch.Tensor, intrinsic_target: torch.Tensor
+    ) -> torch.Tensor:
+        """Two-hot CE for the intrinsic (exploration) value ensemble at step 0 — same form as
+        value_loss but grounded on the disagreement-reward TD target."""
+        if self.explore_value_head is None:
+            raise RuntimeError("intrinsic_value_loss requires explore_value=True")
+        v_logits = self.explore_value_head.logits(z0, action0)
+        v_label = self.explore_value_head.twohot_encode(symlog(intrinsic_target))
+        return -(v_label.unsqueeze(0) * F.log_softmax(v_logits, dim=-1)).sum(-1).mean()
 
     def ensemble_consistency_loss_from(
         self,
@@ -312,3 +352,7 @@ class WorldModel(nn.Module):
         tau = self.cfg.ema_tau if enc_tau is None else enc_tau
         _ema_update_(self.target_encoder, self.encoder, tau)
         _ema_update_(self.target_value_head, self.value_head, 1.0 - self.cfg.value_tau)
+        if self.explore_value_head is not None:
+            _ema_update_(
+                self.target_explore_value_head, self.explore_value_head, 1.0 - self.cfg.value_tau
+            )

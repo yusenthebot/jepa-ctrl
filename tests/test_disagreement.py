@@ -15,11 +15,11 @@ torch.manual_seed(0)
 OBS, ACT, LD = 6, 2, 64
 
 
-def _cfg(n_heads: int, latent_norm: str = "simnorm") -> ModelConfig:
+def _cfg(n_heads: int, latent_norm: str = "simnorm", explore_value: bool = False) -> ModelConfig:
     return ModelConfig(
         obs_dim=OBS, act_dim=ACT, latent_dim=LD, simnorm_groups=8, horizon=3,
         enc_hidden=64, pred_hidden=64, action_head_dim=16, n_pred_heads=n_heads,
-        latent_norm=latent_norm,
+        latent_norm=latent_norm, explore_value=explore_value,
     )
 
 
@@ -100,6 +100,89 @@ def test_disagreement_planner_returns_valid_bounded_action():
     assert torch.isfinite(a).all()
 
 
+def test_explore_value_head_built_only_with_flag_and_requires_ensemble():
+    assert WorldModel(_cfg(5)).explore_value_head is None  # flag off
+    wm = WorldModel(_cfg(5, explore_value=True))
+    assert wm.explore_value_head is not None and wm.target_explore_value_head is not None
+    # explore_value with n_heads<2 is rejected at config construction
+    try:
+        _cfg(1, explore_value=True)
+        raise AssertionError("expected ValueError: explore_value needs n_pred_heads>=2")
+    except ValueError:
+        pass
+
+
+def test_normalized_disagreement_divides_by_scale():
+    wm = WorldModel(_cfg(5))
+    z, a = torch.randn(8, LD), torch.randn(8, ACT)
+    raw = wm.ensemble_disagreement(z, a)
+    wm.disag_scale.fill_(4.0)
+    norm = wm.normalized_disagreement(z, a)
+    assert torch.allclose(norm, raw / (4.0 + 1e-8), atol=1e-6)
+
+
+def test_update_disag_scale_is_ema():
+    wm = WorldModel(_cfg(5))
+    wm.disag_scale.fill_(1.0)
+    wm.update_disag_scale(torch.full((8,), 5.0), tau=0.9)
+    assert abs(wm.disag_scale.item() - (0.9 * 1.0 + 0.1 * 5.0)) < 1e-6
+
+
+def test_intrinsic_value_loss_updates_only_explore_value_head():
+    """measure-don't-reshape: the intrinsic value loss must not leak gradient into the encoder,
+    main predictor, or the disagreement ensemble — only into the explore value head."""
+    wm = WorldModel(_cfg(4, explore_value=True))
+    z0 = wm.encode(torch.randn(8, OBS))
+    a0 = torch.randn(8, ACT)
+    tgt = torch.randn(8)
+    loss = wm.intrinsic_value_loss(z0.detach(), a0, tgt)
+    assert loss.ndim == 0
+    wm.zero_grad(set_to_none=True)
+    loss.backward()
+    def _has_grad(mod):
+        return any(p.grad is not None and p.grad.abs().sum() > 0 for p in mod.parameters())
+    assert not _has_grad(wm.encoder), "intrinsic value leaked grad into encoder"
+    assert not _has_grad(wm.predictor), "intrinsic value leaked grad into main predictor"
+    assert not _has_grad(wm.predictor_ensemble), "intrinsic value leaked grad into ensemble"
+    assert _has_grad(wm.explore_value_head), "intrinsic value must train the explore value head"
+
+
+def test_ema_update_moves_target_explore_value_head():
+    wm = WorldModel(_cfg(5, explore_value=True))
+    before = [p.clone() for p in wm.target_explore_value_head.parameters()]
+    for p in wm.explore_value_head.parameters():  # perturb online head
+        p.data.add_(1.0)
+    wm.ema_update()
+    moved = any(
+        not torch.equal(b, a)
+        for b, a in zip(before, wm.target_explore_value_head.parameters(), strict=True)
+    )
+    assert moved, "EMA must move the target explore value head toward the online head"
+
+
+def test_disagreement_planner_with_intrinsic_value_bootstraps_terminal():
+    """With an explore value head, the disagreement score = myopic sum + gamma^H * intrinsic value.
+    Verify it equals the myopic score plus the terminal bootstrap term."""
+    wm = WorldModel(_cfg(5, explore_value=True))
+    cfg = MPPIConfig(horizon=3, iters=1, num_samples=4, num_elites=2, objective="disagreement")
+    planner = MPPIPlanner(wm, cfg, -torch.ones(ACT), torch.ones(ACT), device="cpu")
+    z0 = wm.encode_pre(torch.randn(1, OBS)).expand(4, -1).contiguous()
+    actions = torch.randn(3, 4, ACT).clamp(-1, 1)
+    got = planner._score(z0, actions)
+    # manual myopic sum (normalized) + terminal intrinsic value bootstrap
+    z_in = z0
+    expect = torch.zeros(4)
+    for hh in range(3):
+        expect = expect + (cfg.gamma**hh) * wm.normalized_disagreement(z_in, actions[hh])
+        z_in = wm.predictor(z_in, actions[hh])
+    ev = wm.explore_value_head
+    v_term = ev.to_scalar(ev.logits(z_in, actions[-1])).mean(0)
+    expect = expect + (cfg.gamma**3) * v_term
+    assert torch.allclose(got, expect, atol=1e-5)
+    a = planner.plan(torch.randn(OBS))
+    assert a.shape == (ACT,) and torch.isfinite(a).all()
+
+
 def test_disagreement_score_matches_manual_rollout():
     """_score_disagreement = discounted sum of per-step ensemble disagreement along the shared
     open-loop rollout. Verify against a hand rollout so the planner optimises the real signal."""
@@ -109,10 +192,11 @@ def test_disagreement_score_matches_manual_rollout():
     z0 = wm.encode_pre(torch.randn(1, OBS)).expand(4, -1).contiguous()
     actions = torch.randn(3, 4, ACT).clamp(-1, 1)
     got = planner._score(z0, actions)
-    # manual
+    # manual: myopic normalized-disagreement sum (no explore value head here => no bootstrap)
+    assert wm.explore_value_head is None
     z_in = z0
     expect = torch.zeros(4)
     for hh in range(3):
-        expect = expect + (cfg.gamma**hh) * wm.ensemble_disagreement(z_in, actions[hh])
+        expect = expect + (cfg.gamma**hh) * wm.normalized_disagreement(z_in, actions[hh])
         z_in = wm.predictor(z_in, actions[hh])
     assert torch.allclose(got, expect, atol=1e-5)

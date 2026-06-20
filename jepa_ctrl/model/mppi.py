@@ -99,16 +99,26 @@ class MPPIPlanner:
 
     @torch.no_grad()
     def _score_disagreement(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-        """Intrinsic Plan2Explore score: discounted sum of ensemble disagreement along the
-        rollout. The dynamics are the SAME shared predictor (fair vs the reward arm); only the
-        objective differs — seek states where the heads disagree (= high model uncertainty =
-        novel). Task reward/value are NOT consulted. actions: (H, N, act_dim) -> (N,)."""
+        """Intrinsic Plan2Explore score over the SAME shared predictor (fair vs the reward arm);
+        only the objective differs — seek states the ensemble disagrees on (high model uncertainty
+        = novel). Task reward/value are NOT consulted.
+
+        Score = sum_h gamma^h * normalized_disagreement(z_h, a_h)  [+ gamma^H * intrinsic_value(z_H,
+        a_H) when an explore value head exists]. The intrinsic value bootstrap turns the MYOPIC
+        H-step novelty sum into LONG-HORIZON exploration ("expected future novelty"), which is what
+        a temporally-extended hard-exploration task (e.g. swing-up) needs. OPTIMISTIC: mean over the
+        intrinsic value ensemble (exploration seeks uncertainty, so no min-of-subset pessimism).
+        actions: (H, N, act_dim) -> (N,)."""
         cfg = self.cfg
+        ev = self.model.explore_value_head
         score = z0_pre.new_zeros(actions.shape[1])
         z_in = z0_pre
         for h in range(cfg.horizon):
-            score = score + (cfg.gamma**h) * self.model.ensemble_disagreement(z_in, actions[h])
+            score = score + (cfg.gamma**h) * self.model.normalized_disagreement(z_in, actions[h])
             z_in = self.model.predictor(z_in, actions[h])  # open-loop, shared dynamics
+        if ev is not None:
+            v_term = ev.to_scalar(ev.logits(z_in, actions[-1])).mean(0)  # (N,) optimistic mean
+            score = score + (cfg.gamma ** cfg.horizon) * v_term
         return score
 
     @torch.no_grad()
