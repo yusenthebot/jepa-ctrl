@@ -3,12 +3,68 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 
 from .buffer import PixelReplayBuffer, ReplayBuffer
 from .mppi import MPPIConfig, MPPIPlanner, train_mppi
 from .sigreg import sigreg_loss
 from .world_model import WorldModel
+
+
+def pixel_buffer_capacity(requested: int, obs_shape, max_bytes: int = 8 * 1024**3) -> int:
+    """Clamp a pixel replay-buffer capacity to a byte budget. A pixel slot is ~100x heavier than
+    a state vector, so reusing the state-buffer default capacity (1e6) for a pixel model is a
+    60+ GB OOM bomb. Bound it so no caller can fault in tens of GB (OOM rule: estimate before
+    allocate). Real pixel runs pass ~5e4 (~6.3 GB) and stay below the ceiling unchanged."""
+    bytes_per_slot = 2 * int(np.prod(obs_shape))  # frame + next_frame, uint8
+    return max(1, min(int(requested), max_bytes // bytes_per_slot))
+
+
+class NearFallBank:
+    """R17 reset-curriculum bank of physics states harvested from LOW-return (collapsing)
+    episodes. sample() returns a banked state + small Gaussian pose noise so a new episode can
+    START near a fall, teaching recovery. Only LOW-return episodes (the caller gates on a
+    return threshold) contribute, so the bank concentrates on the bad-start coverage that the
+    standard reset distribution under-samples.
+
+    Reservoir over states (not episodes): when full, a uniformly-random existing slot is
+    overwritten, so the bank stays an unbiased sample of all low-return states seen so far.
+    """
+
+    def __init__(self, capacity: int, pose_noise: float, rng_seed: int) -> None:
+        if capacity <= 0:
+            raise ValueError("capacity must be positive")
+        self.capacity = int(capacity)
+        self.pose_noise = float(pose_noise)
+        self._rng = np.random.default_rng(rng_seed)
+        self._states: list[np.ndarray] = []
+        self._seen = 0  # total low-return states offered (for reservoir replacement)
+
+    def add_episode(self, states: list[np.ndarray], ep_return: float) -> None:
+        """Add a full low-return episode's states to the reservoir. The caller decides the
+        episode is low-return; ep_return is accepted for symmetry/logging only."""
+        for s in states:
+            s = np.asarray(s, np.float64).copy()
+            self._seen += 1
+            if len(self._states) < self.capacity:
+                self._states.append(s)
+            else:
+                j = int(self._rng.integers(0, self._seen))
+                if j < self.capacity:
+                    self._states[j] = s
+
+    def sample(self) -> np.ndarray:
+        """A banked state + bounded zero-mean Gaussian pose noise (fresh copy each call)."""
+        if not self._states:
+            raise IndexError("sample() from an empty NearFallBank")
+        i = int(self._rng.integers(0, len(self._states)))
+        base = self._states[i]
+        noise = self._rng.normal(0.0, self.pose_noise, size=base.shape)
+        return (base + noise).astype(np.float64)
+
+    def __len__(self) -> int:
+        return len(self._states)
 
 
 @dataclass(frozen=True)
@@ -52,6 +108,14 @@ class TrainConfig:
     eval_every: int = 10_000
     gamma: float = 0.99
     capacity: int = 1_000_000
+    # R17 reset-curriculum (cover-to-recover probe of the bad-start-coverage diagnosis). Default
+    # OFF -> additive, every existing run is byte-identical. When on, a fraction reset_p of resets
+    # start from a banked near-fall state (+ pose noise) instead of the standard reset.
+    reset_curriculum: bool = False
+    reset_p: float = 0.3  # probability a reset draws from the bank (when non-empty)
+    bank_capacity: int = 5000  # max physics states held in the near-fall reservoir
+    bank_pose_noise: float = 0.02  # Gaussian std added to a sampled state at reset
+    bank_return_thresh: float = 150.0  # episodes with return < this feed the bank
 
 
 def _param_groups(model: WorldModel, cfg: TrainConfig) -> list[dict]:
@@ -115,8 +179,11 @@ class Trainer:
             mc = model.cfg
             # the env already frame-stacks; store the FULL stacked obs as one frame (frame_stack=1)
             # to avoid a redundant re-stack and the env/buffer single-frame interface mismatch.
+            # Bound the pixel buffer to a byte budget (see pixel_buffer_capacity): the state
+            # default capacity (1e6) would be a 60+ GB OOM bomb at pixel slot sizes.
+            pix_cap = pixel_buffer_capacity(cfg.capacity, mc.obs_shape)
             self.buffer = PixelReplayBuffer(
-                cfg.capacity, tuple(mc.obs_shape), mc.act_dim, 1, self.device
+                pix_cap, tuple(mc.obs_shape), mc.act_dim, 1, self.device
             )
         else:
             self.buffer = ReplayBuffer(
@@ -124,6 +191,13 @@ class Trainer:
             )
         self.opt = torch.optim.Adam(_param_groups(model, cfg))
         self.step = 0
+        # R17 reset-curriculum state (inert unless cfg.reset_curriculum). The bank harvests
+        # physics states from low-return episodes; _ep_states / _ep_return track the CURRENT
+        # episode as collect feeds note_step(). _rc_rng gates the reset draw deterministically.
+        self.bank = NearFallBank(cfg.bank_capacity, cfg.bank_pose_noise, rng_seed=0)
+        self._ep_states: list[np.ndarray] = []
+        self._ep_return = 0.0
+        self._rc_rng = np.random.default_rng(0)
 
     # --- EMA schedule -------------------------------------------------------------
     def _enc_tau(self) -> float:
@@ -236,15 +310,66 @@ class Trainer:
         metrics["loss"] = float(loss.detach())
         return metrics
 
+    # --- reset-curriculum hooks (R17) --------------------------------------------
+    def reset_env(self, env) -> torch.Tensor:
+        """Reset `env` and return the obs tensor; the SINGLE reset entry point shared by
+        train() and scripts/train.py so the curriculum drives BOTH collect loops identically.
+
+        Default (cfg.reset_curriculum=False): a plain env.reset() — byte-identical to the
+        pre-R17 path. With the curriculum on and a non-empty bank, with prob reset_p the
+        episode starts from a banked near-fall state (+ pose noise); otherwise a standard
+        reset. Always re-arms the per-episode tracker.
+        """
+        cfg = self.cfg
+        if (
+            cfg.reset_curriculum
+            and len(self.bank) > 0
+            and float(self._rc_rng.random()) < cfg.reset_p
+        ):
+            obs_np = env.reset(from_state=self.bank.sample())
+        else:
+            obs_np = env.reset()
+        self._ep_states = []
+        self._ep_return = 0.0
+        return torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
+
+    def note_step(self, state: np.ndarray | None, reward: float, done: bool) -> None:
+        """Feed one collected transition into the per-episode tracker. `state` is the
+        env physics state BEFORE the step (env.get_state()); pass None to skip banking
+        (e.g. curriculum off). On episode end, if the episode is low-return, harvest its
+        states into the bank."""
+        if state is not None:
+            self._ep_states.append(np.asarray(state, np.float64).copy())
+        self._ep_return += float(reward)
+        if done:
+            if (
+                self.cfg.reset_curriculum
+                and self._ep_states
+                and self._ep_return < self.cfg.bank_return_thresh
+            ):
+                self.bank.add_episode(self._ep_states, self._ep_return)
+            self._ep_states = []
+            self._ep_return = 0.0
+
     # --- collect + train loop -----------------------------------------------------
     def collect_step(self, env, obs: torch.Tensor) -> tuple[torch.Tensor, float, bool]:
         """Take one behaviour action in `env`, store the transition. Returns (next_obs, r, done).
-        `env` follows the DMCEnv protocol (reset/step). The trainer never builds the env."""
+        `env` follows the DMCEnv protocol (reset/step). The trainer never builds the env.
+
+        When cfg.reset_curriculum, snapshots env.get_state() BEFORE the step and feeds the
+        transition to note_step() so the near-fall bank is harvested without the caller having
+        to thread the tracking itself."""
+        pre_state = (
+            env.get_state()
+            if self.cfg.reset_curriculum and hasattr(env, "get_state")
+            else None
+        )
         a = self.behaviour_action(obs)
         next_obs_np, reward, done = env.step(a.cpu().numpy())
         next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=self.device)
         self.buffer.add(obs, a, reward, next_obs, done)
         self.step += 1
+        self.note_step(pre_state, reward, done)
         return next_obs, float(reward), bool(done)
 
     def train(
@@ -255,13 +380,13 @@ class Trainer:
         eval_hook: Callable[[int], None] | None = None,
     ) -> None:  # pragma: no cover - drives a live sim; not exercised in unit tests
         """Full collect+update loop. NOT run in unit tests (it drives a real simulator)."""
-        obs = torch.as_tensor(env.reset(), dtype=torch.float32, device=self.device)
+        obs = self.reset_env(env)
         self.planner.reset()
         while self.step < total_steps:
             next_obs, _, done = self.collect_step(env, obs)
             obs = next_obs
             if done:
-                obs = torch.as_tensor(env.reset(), dtype=torch.float32, device=self.device)
+                obs = self.reset_env(env)
                 self.planner.reset()
             if len(self.buffer) > self.model.cfg.horizon + 1 and self.step >= self.cfg.seed_steps:
                 for _ in range(updates_per_step):

@@ -128,11 +128,14 @@ def test_reconstruction_targets_future_frame_not_only_current():
 # (3) Trainer.update on the reconstruction arm runs on random uint8 + returns a metric
 # =====================================================================================
 def _seed_pixel_buffer(buf, n_steps=48, ep_len=12, act_dim=4):
+    # frames must match the buffer's stored shape: the Trainer stores the FULL frame-stacked obs
+    # (e.g. 9-channel for a 3-frame stack) as one slot (frame_stack=1), not a single RGB frame.
+    c, h, w = buf.frame_shape
     for i in range(n_steps):
         first = (i % ep_len) == 0
         done = (i % ep_len) == (ep_len - 1)
-        frame = torch.randint(0, 256, (3, 84, 84), dtype=torch.uint8)
-        nxt = torch.randint(0, 256, (3, 84, 84), dtype=torch.uint8)
+        frame = torch.randint(0, 256, (c, h, w), dtype=torch.uint8)
+        nxt = torch.randint(0, 256, (c, h, w), dtype=torch.uint8)
         buf.add(frame, torch.randn(act_dim), float(torch.randn(())), nxt, done, first=first)
 
 
@@ -143,7 +146,9 @@ def test_recon_arm_trainer_update_runs_on_uint8():
     cfg = _cnn_cfg(latent_dim=64, horizon=2, act_dim=4)
     wm = WorldModel(cfg)  # built WITHOUT a decoder; the recon Trainer builds + owns one
     assert wm.decoder is None
-    tcfg = TrainConfig(grounding="reconstruction", batch_size=4, seed_steps=0, recon_coef=1.0)
+    tcfg = TrainConfig(
+        grounding="reconstruction", batch_size=4, seed_steps=0, recon_coef=1.0, capacity=1024
+    )
     act_low = -torch.ones(cfg.act_dim)
     act_high = torch.ones(cfg.act_dim)
     trainer = Trainer(wm, tcfg, act_low, act_high, mppi_cfg=MPPIConfig(horizon=2))
@@ -172,7 +177,7 @@ def test_recon_arm_update_drives_the_decoder():
 
     cfg = _cnn_cfg(latent_dim=64, horizon=2, act_dim=4)
     wm = WorldModel(cfg)
-    tcfg = TrainConfig(grounding="reconstruction", batch_size=4, seed_steps=0)
+    tcfg = TrainConfig(grounding="reconstruction", batch_size=4, seed_steps=0, capacity=1024)
     trainer = Trainer(
         wm, tcfg, -torch.ones(cfg.act_dim), torch.ones(cfg.act_dim), mppi_cfg=MPPIConfig(horizon=2)
     )
@@ -193,7 +198,7 @@ def test_jepa_arm_has_no_decoder():
     cfg = _cnn_cfg(latent_dim=64, horizon=2, act_dim=4)
     wm = WorldModel(cfg)  # default build_decoder=False
     assert wm.decoder is None
-    tcfg = TrainConfig(grounding="reward", batch_size=4, seed_steps=0)  # JEPA arm
+    tcfg = TrainConfig(grounding="reward", batch_size=4, seed_steps=0, capacity=1024)  # JEPA arm
     trainer = Trainer(
         wm, tcfg, -torch.ones(cfg.act_dim), torch.ones(cfg.act_dim), mppi_cfg=MPPIConfig(horizon=2)
     )
@@ -215,3 +220,18 @@ def test_jepa_decode_raises_without_decoder():
         raise AssertionError("expected RuntimeError decoding without a decoder")
     except RuntimeError:
         pass
+
+
+def test_pixel_buffer_capacity_clamps_to_byte_budget():
+    """OOM guard (zero-allocation unit test): the state default capacity (1e6) at a pixel slot
+    size must clamp to the 8 GiB ceiling, while a realistic pixel capacity passes through."""
+    from jepa_ctrl.model.trainer import pixel_buffer_capacity
+
+    obs = (9, 84, 84)  # 9*84*84*2 = 127008 bytes/slot
+    clamped = pixel_buffer_capacity(1_000_000, obs)
+    assert clamped < 1_000_000, "default capacity must be clamped for a pixel buffer"
+    assert clamped * 127008 <= 8 * 1024**3, "clamped capacity still exceeds the 8 GiB ceiling"
+    # a realistic pixel run (~6.3 GB at 5e4) is below the ceiling -> unchanged
+    assert pixel_buffer_capacity(50_000, obs) == 50_000
+    # never returns < 1 even for an absurd slot size
+    assert pixel_buffer_capacity(1_000_000, (3, 100_000, 100_000)) >= 1

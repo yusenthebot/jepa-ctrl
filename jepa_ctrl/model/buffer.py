@@ -57,6 +57,13 @@ class PixelReplayBuffer:
         """Total bytes of the frame stores (the dominant term) — for the memory budget check."""
         return self._frame.element_size() * self._frame.nelement() * 2  # frame + next_frame
 
+    @staticmethod
+    def estimate_nbytes(capacity: int, frame_shape: tuple[int, int, int]) -> int:
+        """Frame-store bytes for a (capacity, frame_shape) WITHOUT allocating — so a memory-budget
+        check (or capacity planner) never has to fault in the buffer it is sizing."""
+        c, h, w = (int(x) for x in frame_shape)
+        return int(capacity) * c * h * w * 2  # uint8, frame + next_frame
+
     def add(
         self,
         frame: torch.Tensor,

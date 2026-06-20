@@ -225,12 +225,15 @@ def test_pixel_buffer_single_transition_sample():
 
 def test_pixel_buffer_memory_under_budget():
     # 1e5 frames of 84x84x3 uint8 (frame + next_frame) must fit comfortably (< a few GB).
-    buf = PixelReplayBuffer(capacity=100_000, frame_shape=(3, 84, 84), act_dim=6, frame_stack=3)
-    gib = buf.nbytes / (1024**3)
-    assert gib < 6.0, f"pixel buffer is {gib:.2f} GiB, expected < 6 GiB"
-    # sanity: the analytic byte count matches (1e5 * 84*84*3 * 1 byte * 2 stores)
-    expected = 100_000 * 84 * 84 * 3 * 2
-    assert buf.nbytes == expected
+    # Use the allocation-free estimator so the budget check never faults in the 4.2 GB it sizes
+    # (and never trips a virtual-address cap on a torch/CUDA process).
+    expected = 100_000 * 84 * 84 * 3 * 2  # 1e5 * 84*84*3 * 1 byte * 2 stores
+    est = PixelReplayBuffer.estimate_nbytes(100_000, (3, 84, 84))
+    assert est == expected
+    assert est / (1024**3) < 6.0, f"pixel buffer is {est / (1024**3):.2f} GiB, expected < 6 GiB"
+    # the estimator must match a small real buffer's nbytes (formula sanity)
+    small = PixelReplayBuffer(capacity=200, frame_shape=(3, 84, 84), act_dim=6, frame_stack=3)
+    assert small.nbytes == PixelReplayBuffer.estimate_nbytes(200, (3, 84, 84))
 
 
 def test_pixel_buffer_stack_clamps_at_episode_start():

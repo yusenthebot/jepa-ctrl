@@ -55,8 +55,41 @@ class DMCEnv:
             [np.asarray(obs[k], np.float32).ravel() for k in self._obs_keys]
         )
 
-    def reset(self) -> np.ndarray:
-        return self._flat_obs(self._env.reset().observation)
+    def get_state(self) -> np.ndarray:
+        """Full dm_control physics state (qpos+qvel+act+...), copied so the bank owns it.
+
+        This is the canonical reset-curriculum snapshot: feeding it back through
+        reset(from_state=...) reproduces this exact physical configuration.
+        """
+        return np.asarray(self._env.physics.get_state(), np.float64).copy()
+
+    def set_state(self, state: np.ndarray) -> None:
+        """Restore a physics state and recompute derived quantities/contacts.
+
+        after_reset() runs physics.forward() (with actuation disabled) so mjData
+        derived fields (xpos, contacts, sensors) are consistent with the new qpos/qvel
+        before any observation is read — the correct dm_control idiom for state injection.
+        """
+        self._env.physics.set_state(np.asarray(state, np.float64))
+        self._env.physics.after_reset()
+
+    def reset(self, from_state: np.ndarray | None = None) -> np.ndarray:
+        """Standard reset, OR (reset-curriculum) a reset FROM a banked physics state.
+
+        from_state is None -> current behaviour: self._env.reset() re-randomises the
+        initial pose via the task's initialize_episode and returns the flattened obs.
+
+        from_state given -> set the physics state WITHOUT re-randomising, then build the
+        observation directly from the task (task.get_observation(physics)) flattened with
+        the SAME key order as step()/reset() — so the returned obs is byte-for-byte what
+        the encoder sees at that physical state. We do NOT call self._env.reset(), which
+        would discard the injected state.
+        """
+        if from_state is None:
+            return self._flat_obs(self._env.reset().observation)
+        self.set_state(from_state)
+        obs = self._env.task.get_observation(self._env.physics)
+        return self._flat_obs(obs)
 
     def step(self, action) -> tuple[np.ndarray, float, bool]:
         action = np.clip(
