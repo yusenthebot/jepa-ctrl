@@ -77,11 +77,45 @@ def test_ensemble_loss_updates_only_ensemble_params():
 def test_mppi_objective_validation():
     MPPIConfig(objective="reward")
     MPPIConfig(objective="disagreement")
+    MPPIConfig(objective="hybrid")
     try:
         MPPIConfig(objective="bogus")
         raise AssertionError("expected ValueError for bad objective")
     except ValueError:
         pass
+
+
+def test_hybrid_score_is_reward_plus_beta_times_disagreement():
+    """hybrid score = extrinsic reward score + explore_beta * intrinsic disagreement score. At
+    beta=0 it must equal the pure reward score; the trainer anneals beta 1->0 (explore->exploit)."""
+    wm = WorldModel(_cfg(5))
+    cfg = MPPIConfig(horizon=3, iters=1, num_samples=4, num_elites=2, objective="hybrid")
+    planner = MPPIPlanner(wm, cfg, -torch.ones(ACT), torch.ones(ACT), device="cpu")
+    z0 = wm.encode_pre(torch.randn(1, OBS)).expand(4, -1).contiguous()
+    actions = torch.randn(3, 4, ACT).clamp(-1, 1)
+    r = planner._score_reward(z0, actions)
+    d = planner._score_disagreement(z0, actions)
+    planner.explore_beta = 0.7
+    got = planner._score(z0, actions)
+    assert torch.allclose(got, r + 0.7 * d, atol=1e-5)
+    planner.explore_beta = 0.0  # fully exploit => identical to pure reward objective
+    assert torch.allclose(planner._score(z0, actions), r, atol=1e-5)
+
+
+def test_trainer_explore_beta_anneals():
+    from jepa_ctrl.model.trainer import TrainConfig, Trainer
+    wm = WorldModel(_cfg(5))
+    tc = TrainConfig(explore_beta_start=1.0, explore_beta_end=0.0, explore_beta_anneal_steps=100,
+                     seed_steps=0)
+    tr = Trainer(wm, tc, -torch.ones(ACT), torch.ones(ACT), device="cpu")
+    tr.step = 0
+    assert abs(tr._explore_beta() - 1.0) < 1e-6
+    tr.step = 50
+    assert abs(tr._explore_beta() - 0.5) < 1e-6
+    tr.step = 100
+    assert abs(tr._explore_beta() - 0.0) < 1e-6
+    tr.step = 999  # clamped
+    assert abs(tr._explore_beta() - 0.0) < 1e-6
 
 
 def _planner(wm: WorldModel, objective: str) -> MPPIPlanner:

@@ -28,15 +28,18 @@ class MPPIConfig:
     corr: float = 0.0  # temporal correlation of the action noise in [0,1)
     min_q_subset: int = 2  # min-of-subset size from the value ensemble (pessimism)
     objective: str = "reward"  # "reward" (extrinsic + terminal value) | "disagreement" (intrinsic
-    # Plan2Explore exploration: maximise discounted sum of ensemble disagreement; task reward unused)
+    # Plan2Explore exploration: maximise discounted ensemble disagreement; task reward unused) |
+    # "hybrid" (extrinsic + beta*intrinsic; beta annealed by the trainer => explore-early exploit-late)
 
     def __post_init__(self) -> None:
         if self.num_elites > self.num_samples:
             raise ValueError("num_elites cannot exceed num_samples")
         if not 0.0 <= self.corr < 1.0:
             raise ValueError("corr must be in [0, 1)")
-        if self.objective not in ("reward", "disagreement"):
-            raise ValueError(f"objective must be 'reward' or 'disagreement', got {self.objective!r}")
+        if self.objective not in ("reward", "disagreement", "hybrid"):
+            raise ValueError(
+                f"objective must be 'reward'|'disagreement'|'hybrid', got {self.objective!r}"
+            )
 
 
 def train_mppi() -> MPPIConfig:
@@ -73,6 +76,10 @@ class MPPIPlanner:
         self.act_low = torch.as_tensor(act_low, dtype=torch.float32, device=self.device)
         self.act_high = torch.as_tensor(act_high, dtype=torch.float32, device=self.device)
         self._mu: torch.Tensor | None = None  # warm-start prior (H, act_dim)
+        # hybrid objective: weight on the intrinsic (disagreement) term. The trainer anneals this
+        # 1->0 over training so collection explores early and exploits the task reward late. Inert
+        # unless cfg.objective=="hybrid".
+        self.explore_beta: float = 1.0
 
     def reset(self) -> None:
         """Drop the warm-start prior (call between episodes)."""
@@ -80,9 +87,22 @@ class MPPIPlanner:
 
     @torch.no_grad()
     def _score(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-        """actions: (H, N, act_dim). Returns (N,) trajectory score under cfg.objective."""
-        if self.cfg.objective == "disagreement":
+        """actions: (H, N, act_dim). Returns (N,) trajectory score under cfg.objective.
+          reward       -> extrinsic only
+          disagreement -> intrinsic only
+          hybrid       -> extrinsic + explore_beta * intrinsic (beta annealed => explore->exploit)"""
+        obj = self.cfg.objective
+        if obj == "disagreement":
             return self._score_disagreement(z0_pre, actions)
+        if obj == "hybrid":
+            return self._score_reward(z0_pre, actions) + self.explore_beta * self._score_disagreement(
+                z0_pre, actions
+            )
+        return self._score_reward(z0_pre, actions)
+
+    @torch.no_grad()
+    def _score_reward(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+        """Extrinsic score: discounted reward + terminal value (min-of-subset pessimism)."""
         cfg = self.cfg
         preds = self.model.rollout(z0_pre, actions)  # H x (N, latent)
         ret = z0_pre.new_zeros(actions.shape[1])

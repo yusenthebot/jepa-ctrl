@@ -161,8 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
     # reward IGNORED at collection — pure intrinsic). Eval always plans on reward (zero-shot task).
     p.add_argument("--n-pred-heads", type=int, default=1,
                    help="independent predictor heads for epistemic disagreement (1 = no ensemble)")
-    p.add_argument("--explore-objective", default="reward", choices=["reward", "disagreement"],
-                   help="data-collection planning objective (disagreement => Plan2Explore)")
+    p.add_argument("--explore-objective", default="reward",
+                   choices=["reward", "disagreement", "hybrid"],
+                   help="data-collection planning objective. disagreement => Plan2Explore; "
+                        "hybrid => extrinsic + annealed intrinsic (explore-early, exploit-late)")
     p.add_argument("--intrinsic-value", action="store_true",
                    help="Plan2Explore proper: train an intrinsic value head on disagreement-reward "
                         "and bootstrap it at the plan horizon (long-horizon exploration). Needs "

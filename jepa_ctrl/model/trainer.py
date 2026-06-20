@@ -101,6 +101,12 @@ class TrainConfig:
     explore_std: float = 0.3  # gaussian action noise added to the MPPI behaviour action (start)
     explore_std_end: float = 0.05  # annealed exploration floor — reduce late-training thrashing
     explore_anneal_steps: int = 100_000  # linear anneal explore_std -> explore_std_end over this
+    # hybrid objective (explore-then-exploit): linearly anneal the intrinsic weight beta on the
+    # collection planner. beta_start dominates with disagreement early (discover the sparse reward
+    # on EVERY seed), beta_end~0 hands over to reward exploitation late (dwell/hold => coherent data).
+    explore_beta_start: float = 1.0
+    explore_beta_end: float = 0.0
+    explore_beta_anneal_steps: int = 60_000
     seed_steps: int = 1000  # uniform-random warmup before MPPI takes over collection
     ema_tau_start: float = 0.99
     ema_tau_end: float = 0.996
@@ -216,6 +222,12 @@ class Trainer:
         frac = min(1.0, self.step / max(1, c.explore_anneal_steps))
         return c.explore_std + (c.explore_std_end - c.explore_std) * frac
 
+    def _explore_beta(self) -> float:
+        """Linearly anneal the hybrid intrinsic weight beta_start -> beta_end (explore->exploit)."""
+        c = self.cfg
+        frac = min(1.0, self.step / max(1, c.explore_beta_anneal_steps))
+        return c.explore_beta_start + (c.explore_beta_end - c.explore_beta_start) * frac
+
     # --- behaviour policy ---------------------------------------------------------
     @torch.no_grad()
     def behaviour_action(self, obs: torch.Tensor) -> torch.Tensor:
@@ -223,6 +235,7 @@ class Trainer:
         if self.step < self.cfg.seed_steps:
             u = torch.rand(self.model.cfg.act_dim, device=self.device)
             return self.act_low + u * (self.act_high - self.act_low)
+        self.planner.explore_beta = self._explore_beta()  # hybrid explore->exploit schedule
         a = self.planner.plan(obs)
         a = a + self._explore_std() * torch.randn_like(a)
         return a.clamp(self.act_low, self.act_high)
