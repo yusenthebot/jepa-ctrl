@@ -13,15 +13,17 @@ in_flight: R19 leg2 (scripts/r19_campaign.sh cartpole-swingup_sparse 100k seeds 
   reward_s0->disagreement_s0->reward_s1->disagreement_s1, ~40min each (~2.7h). log
   runs/R19_cartpole_swingup_sparse_campaign.log.
 blocked:  none
-finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, non-discriminating control). leg2 cartpole-
-  swingup_sparse: reward_s0 (Arm A) = 0.0 ALL 5 eps, r_mag 0.00 — reward-MPC TOTALLY FAILS (never
-  finds sparse upright from hanging rest = the predicted hard-exploration failure). Arm B (disagree)
-  training now. MUST run cartpole-swingup DENSE control to disambiguate exploration-failure vs method-
-  incapacity-at-swingup before any headline (note: cartpole-BALANCE got 990 R18, so body is controllable).
-next:     When leg2 done: compare A vs B zero-shot return cross-seed
-  (runs/R19_cartpole_swingup_sparse/{reward,disagreement}_s{0,1}/result.json). RED-TEAM (matched eval,
-  per-seed sign, both-sided Fisher), EYES-ON the rollout renders. Attribution control: if Arm A is
-  low, run cartpole-swingup DENSE reward-only to prove method CAN control this body (=> A-failure is
-  EXPLORATION not incapacity). Then leg3 acrobot-swingup_sparse (hard stretch). Difficulty-ladder plot.
+finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, control). leg2 cartpole-swingup_sparse s0: BOTH
+  arms = 0.0 (reward AND disagreement, all 5 eps, r_mag 0.00 = reward NEVER once seen). Frontier claim
+  NOT supported here. 2 live hypotheses: (H1) MPPI horizon=3 too short for swing-up energy-pumping +
+  value bootstrap dead w/o reward => task un-plannable; (H2) disagreement exploration never reached
+  upright. DECISIVE control = cartpole-swingup DENSE reward-MPC: solves => sparse-fail is exploration/
+  grounding; fails => planner/horizon is the bottleneck (then test longer eval horizon).
+next:     When leg2 done (waiter bu139zsb1): confirm cross-seed null, then run the DECISIVE control
+  cartpole-swingup DENSE (scripts/r19_campaign.sh cartpole-swingup 100k 0 1 — both arms; reward arm =
+  method-capability test). If dense reward-MPC SOLVES => sparse-fail = exploration/grounding (then
+  the disagreement story needs a task where exploration reaches reward + horizon-3 can execute). If
+  dense FAILS too => raise eval MPPI horizon (3->5/8) and/or longer-horizon planning; the planner is
+  the bottleneck. Re-decide leg3 (acrobot) only after the planner question is settled.
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty). flock
   serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
