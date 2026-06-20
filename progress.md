@@ -489,12 +489,24 @@ Claim under test: as task exploration-difficulty rises, the A−B gap WIDENS (B 
   ball on its short string lands near the cup readily). So ball_in_cup is NON-discriminating; kept as
   the easy-end CONTROL = "disagreement exploration matches reward-MPC and does not hurt on a solvable
   task." 5-ep eval returns tight 910-995 across all runs.
-- **Leg 2 — cartpole-swingup_sparse (medium-hard, decisive): RUNNING.** From hanging-rest, sparse
-  reward only near upright ⇒ reward-MPC should lack a gradient. If A fails & B solves ⇒ the frontier
-  claim. Method-capacity attribution control (cartpole-swingup DENSE) queued so an A-failure is
-  pinned on EXPLORATION not method incapacity.
-- **Leg 3 — acrobot-swingup_sparse (hard stretch): queued.** Canonical hard-exploration; expect the
-  largest A−B gap if the mechanism is real.
+- **Leg 2 — cartpole-swingup_sparse (medium-hard), DONE — HONEST NEGATIVE.** 2×2 final return:
+  reward {s0 0.0, s1 278.4}, disagreement {s0 0.0, s1 0.0}. Reward-MPC discovered the sparse reward
+  on 1/2 seeds; myopic disagreement on 0/2. **Disagreement exploration did NOT beat reward-MPC**
+  (0/2 vs 1/2; n=2 ⇒ Fisher p≈1.0, inconclusive but clearly not a win). EYES-ON reward_s1 render =
+  GENUINE swing-up (pole low→vertical) ⇒ **method/horizon CAN swing up (H1 refuted)**; the dense
+  attribution control is therefore UNNEEDED (skipped, saves ~2.7h). Bottleneck = stochastic sparse-
+  reward DISCOVERY.
+  - **Diagnosis (red-teamed theory, to verify by instrumentation):** the disagreement-MPC I built is
+    MYOPIC — discounted sum of ensemble disagreement over horizon-3, NO intrinsic value bootstrap. A
+    greedy short-horizon novelty bonus cannot plan the temporally-extended energy-pumping needed to
+    reach the novel upright region. Plan2Explore PROPER trains a VALUE head on the intrinsic reward
+    (disagreement) and plans long-horizon "go where you'll learn most" — that is the missing piece.
+- **Leg 3 — INTRINSIC-VALUE-bootstrapped disagreement exploration (the real leap): NEXT.** Build an
+  exploration value head trained with disagreement-as-reward (SARSA/TD on intrinsic reward); the
+  disagreement-MPC bootstraps with intrinsic value at the horizon ⇒ long-horizon exploration. Plus
+  instrument collection (max pole-energy reached + reward-discovery count) to VERIFY the diagnosis
+  directly: does intrinsic-value exploration reach the upright/reward region more than myopic + reward?
+- **Leg 4 — acrobot-swingup_sparse (hard stretch): after the mechanism works on cartpole.**
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
