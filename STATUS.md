@@ -12,10 +12,14 @@ state:    R18 DONE + recorded. PredictorEnsemble (N independent latent heads, sh
 in_flight: R19 campaign (scripts/r19_campaign.sh ball_in_cup-catch 100k seeds 0,1). Runs SERIALIZED:
   reward_s0 -> disagreement_s0 -> reward_s1 -> disagreement_s1, each ~40min. log runs/R19_campaign.log.
 blocked:  none
-next:     When campaign done: compare Arm A (reward-MPC) vs B (disagreement) zero-shot task return
-  cross-seed (runs/R19_ball_in_cup_catch/{reward,disagreement}_s{0,1}/result.json). RED-TEAM (matched
-  eval, per-seed sign, both-sided Fisher on success), eyes-on the saved rollout renders. If B>>A on
-  sparse -> replicate cartpole-swingup_sparse; record + commit. R19 build committed ee6a084 (ensemble
-  in WorldModel, intrinsic MPPI objective, --n-pred-heads/--explore-objective, suite 125p).
+finding:  EARLY (mid-campaign): reward_s0 SOLVES ball_in_cup-catch (965.4, eps all ~950-995) and
+  disagreement_s0 tracks just as high (75k=967). => ball_in_cup is EASY-SPARSE, NOT a discriminator;
+  reward-MPC does NOT flounder. Run kept as control ("disagreement exploration doesn't hurt").
+next:     When ball_in_cup campaign done (waiter b1yns80iz): record it as the easy-end CONTROL, then
+  launch the DISCRIMINATING campaign on a difficulty ladder where reward-MPC provably fails:
+  cartpole-swingup_sparse (medium) + acrobot-swingup_sparse (hard, canonical hard-exploration).
+  scripts/r19_campaign.sh <task> 100000 0 1, SERIALIZED. Claim to test: A-vs-B gap WIDENS with task
+  exploration-difficulty. RED-TEAM (matched eval, per-seed sign, both-sided Fisher), eyes-on rollout.
+  R19 build committed ee6a084 (ensemble in WM, intrinsic MPPI objective, suite 125p).
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty). flock
   serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
