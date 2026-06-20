@@ -12,7 +12,9 @@ Usage (probe):  python scripts/train.py --task cheetah-run --steps 1200 --seed-s
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
 import time
 from pathlib import Path
 
@@ -146,6 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="linear anneal explore-std -> explore-std-end over this many steps")
     p.add_argument("--freeze-repr", action="store_true",
                    help="red-team control: freeze random repr, train only reward/value heads")
+    # R17 reset-curriculum (cover-to-recover): with prob --reset-p, start an episode from a
+    # banked near-fall state (harvested from low-return episodes) to teach recovery. Default OFF
+    # -> the non-curriculum collect path stays byte-identical to the pre-R17 driver.
+    p.add_argument("--reset-curriculum", action="store_true",
+                   help="R17: start a fraction of episodes from banked near-fall states")
+    p.add_argument("--reset-p", type=float, default=0.3,
+                   help="probability a reset draws a banked near-fall state (curriculum on)")
     p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
     p.add_argument("--distractor", action="store_true",
                    help="composite a time-varying background distractor (pixels only)")
@@ -164,11 +173,36 @@ def train_config_from_args(a: argparse.Namespace, pixels: bool) -> TrainConfig:
         sigreg_coef=a.sigreg_coef, id_coef=a.id_coef, freeze_repr=a.freeze_repr,
         explore_std=a.explore_std, explore_std_end=a.explore_std_end,
         explore_anneal_steps=a.explore_anneal_steps,
+        reset_curriculum=a.reset_curriculum, reset_p=a.reset_p,
         capacity=50_000 if pixels else 1_000_000)  # stacked uint8 buffer ~6.3GB
+
+
+_LOCK_FILE = os.path.expanduser("~/.cache/jepa-ctrl/train.lock")
+
+
+def acquire_singleton_lock():
+    """OOM GUARD: serialize ALL jepa-ctrl trainings to one at a time. A second concurrent training
+    (e.g. an interactive launch racing a supervisor-loop round) REFUSES and exits, instead of piling
+    onto RAM. Root cause of the 2026-06 OOM: ~20 overlapping ~2.3GB dm_control trainings -> 51GB,
+    OOM-killed. Each training holds an exclusive flock for its whole lifetime. Returns the file
+    handle — the caller MUST keep it alive (kept as a local in main())."""
+    os.makedirs(os.path.dirname(_LOCK_FILE), exist_ok=True)
+    fh = open(_LOCK_FILE, "w")  # noqa: SIM115 — handle intentionally kept open to hold the lock
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("REFUSING to start: another jepa-ctrl training holds the lock (trainings are "
+              "serialized — OOM guard). Exiting cleanly. Check: pgrep -af scripts/train.py")
+        raise SystemExit(0) from None
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh
 
 
 def main() -> None:
     a = build_parser().parse_args()
+    _lock = acquire_singleton_lock()  # OOM guard — only one training at a time (held until exit)
+    assert _lock is not None  # keep the handle alive for the process lifetime
 
     device = a.device if (a.device != "cuda" or torch.cuda.is_available()) else "cpu"
     set_seed(a.seed)
@@ -211,8 +245,9 @@ def main() -> None:
               f"obs_corr {cp['obs_latent_corr']:.3f} v_mag {cp['pred_value_mag']:.1f} "
               f"r_mag {cp['pred_reward_mag']:.2f}  elapsed {el/60:.1f}min", flush=True)
 
-    # explicit loop = precise wall-clock instrumentation
-    obs = torch.as_tensor(env.reset(), dtype=torch.float32, device=device)
+    # explicit loop = precise wall-clock instrumentation. reset_env() routes through the R17
+    # reset-curriculum when enabled and is a plain env.reset() otherwise (byte-identical path).
+    obs = trainer.reset_env(env)
     trainer.planner.reset()
     t_start = time.time()
     t_postseed, step_postseed = None, a.seed_steps
@@ -223,7 +258,7 @@ def main() -> None:
         next_obs, _, done = trainer.collect_step(env, obs)
         obs = next_obs
         if done:
-            obs = torch.as_tensor(env.reset(), dtype=torch.float32, device=device)
+            obs = trainer.reset_env(env)
             trainer.planner.reset()
         if len(trainer.buffer) > mcfg.horizon + 1 and trainer.step >= a.seed_steps:
             for _ in range(a.updates_per_step):
