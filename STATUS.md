@@ -19,11 +19,14 @@ finding:  leg1 ball_in_cup: A 959≈B 956 (both solve, control). leg2 cartpole-s
   STOCHASTIC sparse-reward DISCOVERY (seed-dependent: reward-MPC hit s1, missed s0). n=2 too few to
   compare reliability. The real Plan2Explore claim = intrinsic exploration discovers sparse reward
   MORE RELIABLY (higher fraction of seeds find it) -> likely needs a MULTI-SEED discovery-rate test.
-next:     When leg2 done (waiter bu139zsb1): read full 2x2. Given reward is seed-dependent (s0 miss /
-  s1 hit), the right test is a MULTI-SEED DISCOVERY-RATE comparison: run N=6-8 seeds per arm on
-  cartpole-swingup_sparse, metric = fraction of seeds that DISCOVER the sparse reward (final>thresh)
-  + median return. Claim: disagreement-MPC discovery-rate > reward-MPC. RED-TEAM with both-sided
-  Fisher on discovery counts. Eyes-on a swing-up rollout (reward_s1=278) to confirm REAL swing-up.
-  Build a discovery-rate driver (short-ish steps OK if reward found early). Then leg3 acrobot.
+verified: EYES-ON reward_s1 render = GENUINE cartpole swing-up (pole low->vertical across frames).
+  H1 REFUTED: horizon-3 latent-MPPI swings up when reward head has signal. Bottleneck = sparse-reward
+  DISCOVERY (stochastic).
+next:     When leg2 done (waiter bu139zsb1): full 2x2. n=2 too few + mechanism unclear, so DON'T brute
+  16-seed yet. Next round = MECHANISM DIAGNOSTIC: TDD a collection-time instrument in Trainer (count
+  reward-discovery events + track max pole-energy/angle reached during the 100k collect), re-run
+  cartpole-swingup_sparse both arms few seeds. Tests directly "does disagreement reach the reward
+  region MORE" independent of whether eval planner exploits it. If yes -> tune/scale to a discovery-
+  rate headline; if no -> disagreement signal not useful here, pivot (acrobot, or different mechanism).
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty). flock
   serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
