@@ -373,6 +373,20 @@ knob verified consumed by trainer `_explore_std`). 4 runs in background (~37min 
 If the knob is null/negative: next levers = updates-per-step up (undertrained-policy hypothesis) or
 terminal-value recalibration (value head underestimates MC return ~2x).
 
+**R15 RESULT (2026-06-19, re-run after the pause interrupted it) — NULL (5th lever refuted):**
+collapse_rate over 20 eps/cell — base(0.05) s0=0.65 s1=0.75 ; treat(0.20) s0=0.70 s1=0.70. The knob
+moved nothing (both ~0.70). Fisher p≈1.0 both seeds; seeds DISAGREE on sign (treat −1 ep s0, +1 ep s1)
+= noise on a zero effect. Red-team passed: THRESH=150 valley_ok=True (bimodal holds for treat too);
+good_basin_mean NOT cratered (treat 442/497 ≥ base 426/406 — knob harmless but useless). ⇒ raising the
+late-training exploration floor does NOT reduce 3D bimodal collapse. Pre-reg said "add seed 2 on
+disagreement", but Δcollapse=0 / p≈1.0 → this is a clear NULL, not a real seed-reversal, so seed 2 would
+only confirm zero; proceeding to the next lever instead.
+**Cumulative: the 3D bimodal collapse (~0.70 rate) is robust to 5 levers** — capacity (R12),
+representation (R13), planner-search (R13), eval-time action-smoothness (R14), exploration-floor (R15).
+Strongly pointing to an INTRINSIC gait-acquisition limit of this minimal method on unstable quadruped
+dynamics. R16 = the last cheap training lever: does MORE TRAINING (300k vs 200k, "undertrained"
+hypothesis) lower collapse? If null too → record the bimodal collapse as a characterized method boundary.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
