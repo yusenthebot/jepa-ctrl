@@ -11,11 +11,12 @@ state:    R18 DONE + recorded. PredictorEnsemble (N independent latent heads, sh
   + cartpole-swingup_sparse load OK via suite.load.
 in_flight: R19 leg3 (scripts/r19_leg3.sh cartpole-swingup_sparse 100k seeds 0,1). 6 runs SERIALIZED
   (~4.4h): per seed reward -> myopic -> iv. log runs/R19L3_campaign.log.
-PRELIM:   reward_s0 reward_hits=1 (final 0); myopic_s0 reward_hits~142 mid-run (!) -> disagreement
-  exploration reaches the upright/reward region ~140x MORE than reward-MPC. BUT myopic final return
-  was 0 (leg2). => exploration is NOT the bottleneck; DOWNSTREAM (reward-head learning + horizon-3
-  eval-planner exploitation of sparse transient hits) is. Reframes leg2. HOLD headline until all 6
-  runs done (iv hits? returns across arms? reward_s1 hits?).
+PRELIM:   reward_hits (collection, s0): reward-MPC=1, myopic=149, iv=425+ (mid-run) -> MONOTONIC
+  1 -> 149 -> 425: disagreement explores ~140x more than reward-MPC, intrinsic-value ~3x more than
+  myopic. EXPLORATION MECHANISM CONFIRMED (diagnosis + fix both validated). BUT zero-shot RETURN still
+  0 for reward_s0 & myopic_s0 -> the new bottleneck is DOWNSTREAM (reward-head/eval-planner can't
+  exploit explored sparse data). CRUX: does iv_s0 (425 hits) finally give nonzero return? Pending.
+  HOLD headline until 6 runs + cross-seed.
 blocked:  none
 finding:  leg2 cartpole-swingup_sparse FINAL 2x2: reward {s0 0.0, s1 278.4}, disagree {s0 0.0, s1 0.0}.
   Disagreement did NOT beat reward (0/2 vs 1/2 discover). EYES-ON reward_s1 = GENUINE swing-up =>
