@@ -475,6 +475,27 @@ baseline (no gradient on sparse reward) vs Arm B = disagreement-exploration. Pri
 ball_in_cup-catch (sparse), replicate cartpole-swingup_sparse. Hypothesis: B cracks sparse tasks A
 can't. REAL-VERIFY = task return/success cross-seed, eyes-on rollout, red-team before recording.
 
+### R19 (2026-06-20) — reward-free DISAGREEMENT EXPLORATION (Plan2Explore), difficulty ladder
+Build (committed ee6a084, suite 125p): PredictorEnsemble in WorldModel (trained on DETACHED latents
+— gradient-isolation test proves it measures uncertainty WITHOUT reshaping the shared encoder, so
+both arms share an identical representation); MPPI `objective="disagreement"` = discounted sum of
+ensemble disagreement along the shared rollout. Head-to-head: **Arm A** collects by reward-MPC,
+**Arm B** by disagreement-MPC (task reward IGNORED at collection); BOTH eval ZERO-SHOT with reward-MPC.
+Claim under test: as task exploration-difficulty rises, the A−B gap WIDENS (B cracks what reward can't).
+
+- **Leg 1 — ball_in_cup-catch (EASY-SPARSE control), DONE:** Arm A 959.0 (965.4, 952.6) ≈ Arm B 956.3
+  (957.2, 955.4). **Both arms SOLVE it identically.** RED-TEAM correction: reward-MPC does NOT
+  flounder here (hypothesis "sparse ⇒ no gradient" REFUTED for ball_in_cup — it is easy-sparse, the
+  ball on its short string lands near the cup readily). So ball_in_cup is NON-discriminating; kept as
+  the easy-end CONTROL = "disagreement exploration matches reward-MPC and does not hurt on a solvable
+  task." 5-ep eval returns tight 910-995 across all runs.
+- **Leg 2 — cartpole-swingup_sparse (medium-hard, decisive): RUNNING.** From hanging-rest, sparse
+  reward only near upright ⇒ reward-MPC should lack a gradient. If A fails & B solves ⇒ the frontier
+  claim. Method-capacity attribution control (cartpole-swingup DENSE) queued so an A-failure is
+  pinned on EXPLORATION not method incapacity.
+- **Leg 3 — acrobot-swingup_sparse (hard stretch): queued.** Canonical hard-exploration; expect the
+  largest A−B gap if the mechanism is real.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
