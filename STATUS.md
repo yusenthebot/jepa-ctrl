@@ -1,35 +1,23 @@
 # STATUS — main
-updated: 2026-06-20 · loop 18 -> 19
+updated: 2026-06-20 · loop 19
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    run — R19 leg3 LIVE (cartpole-swingup_sparse, 3-arm reward/myopic/iv discovery test)
+phase:    run — R19 leg3 finishing (iv_s1 last run); leg4 hybrid BUILT, launches when GPU frees
 owns:     whole repo (single session)
-state:    R18 DONE + recorded. PredictorEnsemble (N independent latent heads, shared frozen enc+EMA)
-  calibration diagnostic: disagreement D tracks true 1-step error E rho=0.91(s0)/0.95(s1), null~0,
-  partial-ctrl-‖z‖=0.67/0.92, novel/visited 4.5/5.8x. CROSS-SEED PASS -> single shared EMA target does
-  NOT collapse disagreement to noise (noisy-TV kill-hyp REFUTED). Caveat: cartpole easy (head_cos=1.0,
-  D~1e-5) -> hard-task calibration is the campaign's job. test_ensemble.py 6p green. ball_in_cup-catch
-  + cartpole-swingup_sparse load OK via suite.load.
-in_flight: R19 leg3 (scripts/r19_leg3.sh cartpole-swingup_sparse 100k seeds 0,1). 6 runs SERIALIZED
-  (~4.4h): per seed reward -> myopic -> iv. log runs/R19L3_campaign.log.
-DECISIVE (s0): reward {hits 1, ret 0}, myopic {149, 0}, iv {751, 0}. iv discovered reward 751x yet
-  zero-shot ret=0 => MORE EXPLORATION DOES NOT -> CONTROL. Bottleneck DEFINITIVELY downstream, not
-  exploration. NUANCE: reward_s1 (the leg2 success=278) has HIGH hits (1589+) = EXPLOITATION-inflated
-  (dwells in reward once learned). So the diff success vs fail = reward-MPC on discovery DWELLS/HOLDS
-  upright (coherent swing-up data) while disagreement finds upright as TRANSIENT novelty & moves on.
-  => discovery != exploitation-coherent data. NEXT LEAP = hybrid/annealed intrinsic+extrinsic
-  objective (explore-early, exploit-late): does it make sparse swing-up RELIABLE vs reward-MPC's 1/2?
+state:    R18 disagreement calibration cross-seed PASS (EMA-shared disagreement IS calibrated).
+  R19 = reward-free disagreement EXPLORATION (Plan2Explore). leg1 ball_in_cup: A 959≈B 956 (both
+  solve, easy control). leg2 cartpole-swingup_sparse: disagreement 0/2 vs reward 1/2 CONTROL (honest
+  negative); eyes-on reward_s1=GENUINE swing-up (method capable). leg3 3-arm grid (s0): reward_hits
+  1 / 149 / 751 (reward/myopic/iv) = disagreement out-DISCOVERS reward-MPC ~140-750x, iv>myopic;
+  BUT all 0 zero-shot return => discovery != control (transient novelty vs dwell-and-hold; reward_s1
+  held upright 7299 steps -> 278). Bottleneck DOWNSTREAM, not exploration.
+in_flight: R19 leg3 run 6/6 (iv_s1) on GPU. waiter bhvmeffqa fires at completion.
+  leg3 grid: reward{0,278} myopic{0,0} iv{0,?} hits{1/7299, 149/76, 751/?}.
 blocked:  none
-finding:  leg2 cartpole-swingup_sparse FINAL 2x2: reward {s0 0.0, s1 278.4}, disagree {s0 0.0, s1 0.0}.
-  Disagreement did NOT beat reward (0/2 vs 1/2 discover). EYES-ON reward_s1 = GENUINE swing-up =>
-  method CAN swing up (H1 refuted; dense control SKIPPED as redundant). DIAGNOSIS (red-team-pending):
-  my disagreement-MPC is MYOPIC (sum disagreement over H=3, NO intrinsic value) -> can't plan the
-  temporally-extended swing-up. Plan2Explore PROPER = VALUE head on disagreement-reward + long-horizon.
-next:     When leg3 done (waiter): compare 3 arms on (a) reward_hits during collection = DIRECT
-  exploration test (does iv reach reward region > myopic > reward?), (b) final zero-shot return.
-  result.json per run logs reward_hits/explore_objective/intrinsic_value. RED-TEAM: if iv reward_hits
-  >> others -> diagnosis CONFIRMED (myopia was the gap), then scale seeds for a discovery-rate headline
-  + eyes-on an iv swing-up rollout. If iv reward_hits ~ myopic (still ~0) -> intrinsic-value is NOT the
-  fix either; pivot (lower explore_std so directed exploration beats noise, or different intrinsic
-  signal, or accept disagreement-exploration doesn't crack this task & RECORD the bounded negative).
-notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root (NOT empty). flock
-  serializes trainings (refuse-not-block). progress.md=record; LOOP_PROMPT.md=directive.
+next:     When iv_s1 done (bhvmeffqa frees GPU): (1) full leg3 RECORD -> progress.md (honest negative
+  + exploration sub-finding + dwell-vs-transient mechanism). (2) Launch leg4 = RELIABILITY test
+  (scripts/r19_leg4.sh reward vs HYBRID, 4 seeds): hybrid explores early (find reward on EVERY seed,
+  incl. where reward-MPC fails) then exploits late (beta 1->0) => target swing-up on >reward-MPC's
+  1/2. RED-TEAM per-seed + Fisher; eyes-on a hybrid swing-up rollout if it works.
+builds:   leg3 intrinsic-value Plan2Explore + leg4 hybrid objective committed, suite 133p. Knobs:
+  --n-pred-heads 5 --explore-objective {reward|disagreement|hybrid} [--intrinsic-value].
+notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
