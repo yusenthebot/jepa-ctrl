@@ -72,14 +72,21 @@ def main() -> None:
     def dist(s_a, s_b):
         return float(np.linalg.norm(np.asarray(s_a) - np.asarray(s_b)))
 
+    def pdist(s_a, s_b):  # position-only: first half of the physics state (qpos), drops velocity
+        s_a, s_b = np.asarray(s_a), np.asarray(s_b)
+        nq = len(s_a) // 2
+        return float(np.linalg.norm(s_a[:nq] - s_b[:nq]))
+
     goal_ratios, rand_ratios, succ, rand_succ = [], [], 0, 0
+    goal_pratios, rand_pratios, psucc, rand_psucc = [], [], 0, 0
     n = min(a.n_goals, len(traj_state) - a.horizon_gap - 1)
     for i in range(n):
         start_state = traj_state[i]
         goal_state = traj_state[i + a.horizon_gap]
         goal_obs = traj_obs[i + a.horizon_gap]
         d0 = dist(start_state, goal_state)
-        if d0 < 1e-6:
+        p0 = pdist(start_state, goal_state)
+        if d0 < 1e-6 or p0 < 1e-6:
             continue
         # --- goal-MPPI rollout in the real sim ---
         env.reset(from_state=start_state)
@@ -88,17 +95,23 @@ def main() -> None:
         for _ in range(a.plan_steps):
             act = planner.plan(torch.as_tensor(cur_obs(), dtype=torch.float32, device=device))
             env.step(act.cpu().numpy())
-        d_goal = dist(env.get_state(), goal_state)
+        end_goal = env.get_state()
+        d_goal = dist(end_goal, goal_state)
         # --- random-action baseline from the same start ---
         env.reset(from_state=start_state)
         for _ in range(a.plan_steps):
             env.step(rng.uniform(env.act_low, env.act_high).astype(np.float32))
-        d_rand = dist(env.get_state(), goal_state)
+        end_rand = env.get_state()
+        d_rand = dist(end_rand, goal_state)
 
         goal_ratios.append(d_goal / d0)
         rand_ratios.append(d_rand / d0)
         succ += int(d_goal < a.success_frac * d0)
         rand_succ += int(d_rand < a.success_frac * d0)
+        # position-only (qpos): the spatial-reach signal, free of the velocity-match confound
+        pg = pdist(end_goal, goal_state); pr = pdist(end_rand, goal_state)
+        goal_pratios.append(pg / p0); rand_pratios.append(pr / p0)
+        psucc += int(pg < a.success_frac * p0); rand_psucc += int(pr < a.success_frac * p0)
 
     m = len(goal_ratios)
     out = {
@@ -107,6 +120,10 @@ def main() -> None:
         "rand_ratio_median": float(np.median(rand_ratios)) if m else None,
         "goal_success_rate": succ / m if m else None,
         "rand_success_rate": rand_succ / m if m else None,
+        "goal_pos_ratio_median": float(np.median(goal_pratios)) if m else None,
+        "rand_pos_ratio_median": float(np.median(rand_pratios)) if m else None,
+        "goal_pos_success_rate": psucc / m if m else None,
+        "rand_pos_success_rate": rand_psucc / m if m else None,
         "success_frac": a.success_frac, "seed": a.seed,
     }
     print(json.dumps(out, indent=2))
