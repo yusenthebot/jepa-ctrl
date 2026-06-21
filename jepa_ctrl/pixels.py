@@ -35,6 +35,28 @@ def composite_distractor(
     return out
 
 
+def mask_background(rgb: np.ndarray, seg: np.ndarray) -> np.ndarray:
+    """Zero out background pixels, keep the robot — the JEPA MASKED-TARGET image (R20).
+
+    `rgb` is (H, W, 3) uint8 (the CLEAN robot render, pre-distractor). `seg` is the dm_control
+    segmentation map (H, W) or (H, W, C) with object id in channel 0. A pixel is background iff
+    object id == BACKGROUND_ID (-1); those go to 0, robot pixels are kept verbatim. Fed to the
+    stop-grad EMA TARGET encoder while the online encoder sees the full distractor-composited
+    image, so the consistency loss pressures latent(robot+distractor) -> latent(robot-only): the
+    online encoder learns the background is irrelevant. Returns a NEW (H, W, 3) uint8 array.
+    """
+    rgb = np.asarray(rgb)
+    seg = np.asarray(seg)
+    if rgb.ndim != 3 or rgb.shape[-1] != 3:
+        raise ValueError(f"rgb must be (H,W,3); got {rgb.shape}")
+    obj_id = seg[..., 0] if seg.ndim == 3 else seg
+    if obj_id.shape != rgb.shape[:2]:
+        raise ValueError(f"seg {obj_id.shape} does not match rgb spatial {rgb.shape[:2]}")
+    out = rgb.astype(np.uint8, copy=True)
+    out[obj_id == BACKGROUND_ID] = 0
+    return out
+
+
 class ProceduralDistractor:
     """Deterministic, temporally-coherent procedural background video generator.
 

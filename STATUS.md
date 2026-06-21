@@ -1,7 +1,7 @@
 # STATUS — main
 updated: 2026-06-20 · loop 19
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    run — R19 leg4 LIVE (hybrid reliability test: reward vs hybrid, 4 seeds); leg3 DONE
+phase:    build — R20 masked-target distractor robustness (R19 closed; Decision Workflow picked it)
 owns:     whole repo (single session)
 state:    R18 disagreement calibration cross-seed PASS (EMA-shared disagreement IS calibrated).
   R19 = reward-free disagreement EXPLORATION (Plan2Explore). leg1 ball_in_cup: A 959≈B 956 (both
@@ -22,12 +22,18 @@ PRELIM:   leg4 so far: reward{s0 0, s1 278, s2 0} hybrid{s0 0/296h, s1 0/3321h}.
   (pure or hybrid) does NOT improve & hybrid HARMS zero-shot control. Wall = downstream grounding/H3
   planning, not exploration. Await s2(hybrid)/s3 then full RECORD + Decision Workflow for next rung.
 blocked:  none
-next:     When leg4 done (waiter): RELIABILITY headline — does HYBRID swing up on MORE seeds than
-  reward-MPC (target hybrid >> reward-MPC's ~1-2/4)? Compare per-seed return + reward_hits; RED-TEAM
-  Fisher on success counts; EYES-ON a hybrid swing-up rollout if it succeeds. If hybrid wins -> the
-  R19 frontier result (intrinsic exploration makes sparse-task control RELIABLE) -> then leg5 acrobot.
-  If hybrid also ~1/4 -> exploration-coverage isn't the limiter; pivot (reward-head/value capacity,
-  or longer eval horizon, or accept bounded result + /learn the lessons & move to next ladder rung).
+decision: R19 CLOSED (discovery win, control negative). Decision Workflow (4 cand + Opus judge) ->
+  R20 = DISTRACTOR ROBUSTNESS via JEPA MASKED-TARGET STREAM. Idea: feed EMA TARGET encoder a
+  background-zeroed (robot-only) image while online encoder + planner see FULL distractor obs;
+  consistency loss pressures latent(robot+distractor)->latent(robot-only) => online ignores
+  distractor. STRUCTURALLY impossible in single-encoder recon/reward. Attacks R9's 82% collapse
+  (clean 341 -> distractor 60, ratio 0.18) with an ARCHITECTURAL fix, not a tweak.
+next:     R20 BUILD (TDD, pure code — no GPU until hybrid_s3 frees): seg-mask robot pixels (dm_control
+  segmentation render), PixelReplayBuffer stores (obs_full, obs_masked) byte-budgeted, --masked-target
+  routes consistency target to encode_target(obs_masked). DE-RISK before the 24h campaign: (Step2)
+  eyes-on render masked frames — robot incl foot/ground-contact seam survives, bg cleanly zeroed;
+  (Step3) 1-seed ~61min canary read robustness ratio. KILL: clean-baseline regression OR ratio<0.50
+  cross-seed (=> seg too noisy, a publishable bound; pivot to goal-image-latent-control rank2).
 builds:   leg3 intrinsic-value Plan2Explore + leg4 hybrid objective committed, suite 133p. Knobs:
   --n-pred-heads 5 --explore-objective {reward|disagreement|hybrid} [--intrinsic-value].
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.

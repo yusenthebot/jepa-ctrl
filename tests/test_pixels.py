@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from jepa_ctrl.model import CNNEncoder, ModelConfig, PixelReplayBuffer, WorldModel
-from jepa_ctrl.pixels import ProceduralDistractor, composite_distractor
+from jepa_ctrl.pixels import ProceduralDistractor, composite_distractor, mask_background
 
 torch.manual_seed(0)
 RNG = np.random.default_rng(0)
@@ -35,6 +35,39 @@ def test_composite_replaces_background_keeps_robot():
     # something actually changed (the synthetic distractor differs from the render on bg)
     assert (out != rgb).any()
     assert rgb.dtype == np.uint8
+
+
+def test_mask_background_zeros_bg_keeps_robot():
+    """R20 masked-target: background -> 0, robot pixels kept verbatim."""
+    rgb, seg = _synthetic_scene()
+    out = mask_background(rgb, seg)
+    assert out.shape == rgb.shape and out.dtype == np.uint8
+    bg = seg == -1
+    robot = ~bg
+    assert np.array_equal(out[robot], rgb[robot])   # robot kept exactly
+    assert np.all(out[bg] == 0)                     # background zeroed
+    assert out[robot].any()                         # robot signal survives (not all-zero)
+
+
+def test_mask_background_does_not_mutate_input():
+    rgb, seg = _synthetic_scene()
+    rgb_copy = rgb.copy()
+    _ = mask_background(rgb, seg)
+    assert np.array_equal(rgb, rgb_copy)
+
+
+def test_mask_background_accepts_hwc_seg_channel0():
+    rgb, seg2d = _synthetic_scene()
+    seg = np.stack([seg2d, np.zeros_like(seg2d)], axis=-1)  # (H,W,2) dm_control raw
+    out = mask_background(rgb, seg)
+    assert np.array_equal(out[seg2d != -1], rgb[seg2d != -1])
+    assert np.all(out[seg2d == -1] == 0)
+
+
+def test_mask_background_all_background_is_zero():
+    rgb = RNG.integers(1, 256, (16, 16, 3), dtype=np.uint8)  # nonzero so the test is meaningful
+    seg = np.full((16, 16), -1, dtype=np.int32)
+    assert np.all(mask_background(rgb, seg) == 0)
 
 
 def test_composite_does_not_mutate_inputs():
