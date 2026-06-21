@@ -256,6 +256,62 @@ def test_pixel_buffer_single_transition_sample():
     assert out["obs_seq"].dtype == torch.uint8
 
 
+def test_pixel_buffer_masked_dual_store_and_sample():
+    """R20: a masked buffer stores a parallel robot-only stream and returns obs_masked_seq aligned
+    with obs_seq; the masked stream has the (zeroed) background the full stream does not."""
+    buf = PixelReplayBuffer(capacity=60, frame_shape=(9, 16, 16), act_dim=2, frame_stack=1,
+                            masked=True)
+    for i in range(30):
+        f = torch.randint(1, 256, (9, 16, 16), dtype=torch.uint8)  # nonzero everywhere
+        mf = torch.zeros((9, 16, 16), dtype=torch.uint8)
+        mf[:, 4:12, 4:12] = f[:, 4:12, 4:12]  # robot blob kept, background zeroed
+        buf.add(f, torch.zeros(2), float(i), f, (i % 10 == 9), first=(i % 10 == 0),
+                masked_frame=mf, masked_next_frame=mf)
+    out = buf.sample_subtraj(batch=4, length=3)
+    assert "obs_masked_seq" in out
+    assert out["obs_masked_seq"].shape == out["obs_seq"].shape
+    assert out["obs_masked_seq"].dtype == torch.uint8
+    # masked stream is mostly zeroed background; full stream is dense -> strictly more zeros
+    assert (out["obs_masked_seq"] == 0).float().mean() > (out["obs_seq"] == 0).float().mean() + 0.3
+
+
+def test_pixel_buffer_masked_requires_masked_frames():
+    buf = PixelReplayBuffer(capacity=10, frame_shape=(3, 8, 8), act_dim=2, frame_stack=1,
+                            masked=True)
+    z = torch.zeros(3, 8, 8, dtype=torch.uint8)
+    try:
+        buf.add(z, torch.zeros(2), 0.0, z, False)  # missing masked frames
+        raise AssertionError("expected ValueError when masked frames omitted")
+    except ValueError:
+        pass
+
+
+def test_estimate_nbytes_masked_doubles():
+    base = PixelReplayBuffer.estimate_nbytes(1000, (9, 84, 84), masked=False)
+    assert PixelReplayBuffer.estimate_nbytes(1000, (9, 84, 84), masked=True) == 2 * base
+    buf = PixelReplayBuffer(capacity=50, frame_shape=(9, 84, 84), act_dim=2, frame_stack=1,
+                            masked=True)
+    assert buf.nbytes == PixelReplayBuffer.estimate_nbytes(50, (9, 84, 84), masked=True)
+
+
+def test_consistency_masked_target_routes_to_target_stream():
+    """R20 core: passing target_obs_seq routes the stop-grad EMA target to the masked (robot-only)
+    stream while the online latents came from the full obs -> a DIFFERENT loss than same-stream."""
+    cfg = ModelConfig(obs_dim=9 * 16 * 16, act_dim=2, latent_dim=64, simnorm_groups=8, horizon=3,
+                      pred_hidden=64, action_head_dim=16, encoder_type="cnn", obs_shape=(9, 16, 16))
+    wm = WorldModel(cfg)
+    H = cfg.horizon
+    full = torch.randint(1, 256, (H + 1, 4, 9, 16, 16), dtype=torch.uint8)
+    masked = torch.zeros_like(full)
+    masked[..., 4:12, 4:12] = full[..., 4:12, 4:12]
+    acts = torch.randn(H, 4, 2)
+    lat = wm.rollout_latents(full, acts)
+    loss_same = wm.consistency_loss_from(full, acts, lat)
+    loss_masked = wm.consistency_loss_from(full, acts, lat, target_obs_seq=masked)
+    assert loss_same.shape == () and loss_masked.shape == ()
+    assert not torch.allclose(loss_same, loss_masked), "masked target must change the consistency loss"
+
+
 def test_pixel_buffer_memory_under_budget():
     # 1e5 frames of 84x84x3 uint8 (frame + next_frame) must fit comfortably (< a few GB).
     # Use the allocation-free estimator so the budget check never faults in the 4.2 GB it sizes

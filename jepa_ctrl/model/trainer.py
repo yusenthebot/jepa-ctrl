@@ -119,6 +119,10 @@ class TrainConfig:
     # start from a banked near-fall state (+ pose noise) instead of the standard reset.
     reset_curriculum: bool = False
     reset_p: float = 0.3  # probability a reset draws from the bank (when non-empty)
+    # R20 masked-target distractor robustness (pixel only): the EMA consistency target is computed
+    # on a parallel ROBOT-ONLY (background-zeroed) frame stream while the online encoder/planner see
+    # the full distractor-composited obs. Requires a PixelDMCEnv with masked_target=True.
+    masked_target: bool = False
     bank_capacity: int = 5000  # max physics states held in the near-fall reservoir
     bank_pose_noise: float = 0.02  # Gaussian std added to a sampled state at reset
     bank_return_thresh: float = 150.0  # episodes with return < this feed the bank
@@ -187,9 +191,12 @@ class Trainer:
             # to avoid a redundant re-stack and the env/buffer single-frame interface mismatch.
             # Bound the pixel buffer to a byte budget (see pixel_buffer_capacity): the state
             # default capacity (1e6) would be a 60+ GB OOM bomb at pixel slot sizes.
-            pix_cap = pixel_buffer_capacity(cfg.capacity, mc.obs_shape)
+            # masked-target stores a 2nd robot-only stream -> 2x per-slot bytes; budget for it.
+            slot_mult = 2 if cfg.masked_target else 1
+            pix_cap = pixel_buffer_capacity(cfg.capacity, mc.obs_shape, 8 * 1024**3 // slot_mult)
             self.buffer = PixelReplayBuffer(
-                pix_cap, tuple(mc.obs_shape), mc.act_dim, 1, self.device
+                pix_cap, tuple(mc.obs_shape), mc.act_dim, 1, self.device,
+                masked=cfg.masked_target,
             )
         else:
             self.buffer = ReplayBuffer(
@@ -287,7 +294,12 @@ class Trainer:
         elif recon_arm:
             repr_loss = self.model.reconstruction_loss(obs_seq, latents)
         else:
-            repr_loss = self.model.consistency_loss_from(obs_seq, action_seq, latents)
+            # R20 masked-target: route the stop-grad consistency target through the robot-only
+            # masked stream (if the buffer provides it) while the online latents used the full obs.
+            target_obs_seq = traj.get("obs_masked_seq")
+            repr_loss = self.model.consistency_loss_from(
+                obs_seq, action_seq, latents, target_obs_seq=target_obs_seq
+            )
         repr_coef = mcfg.consistency_coef if not recon_arm else cfg.recon_coef
 
         reward_free = cfg.grounding in ("inverse_dynamics", "sigreg")
@@ -405,10 +417,20 @@ class Trainer:
             if self.cfg.reset_curriculum and hasattr(env, "get_state")
             else None
         )
+        # R20 masked-target: snapshot the robot-only masked obs for o_t (before) and o_{t+1} (after).
+        masked_t = (
+            torch.as_tensor(env.masked_obs(), dtype=torch.uint8, device=self.device)
+            if self.buffer.masked else None
+        )
         a = self.behaviour_action(obs)
         next_obs_np, reward, done = env.step(a.cpu().numpy())
         next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=self.device)
-        self.buffer.add(obs, a, reward, next_obs, done)
+        if self.buffer.masked:
+            masked_tp1 = torch.as_tensor(env.masked_obs(), dtype=torch.uint8, device=self.device)
+            self.buffer.add(obs, a, reward, next_obs, done,
+                            masked_frame=masked_t, masked_next_frame=masked_tp1)
+        else:
+            self.buffer.add(obs, a, reward, next_obs, done)
         self.step += 1
         if reward > 0.0:
             self.reward_hits += 1

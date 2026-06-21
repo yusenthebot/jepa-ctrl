@@ -12,7 +12,7 @@ import numpy as np
 from dm_control import suite
 
 from .envs import parse_task
-from .pixels import ProceduralDistractor, composite_distractor
+from .pixels import ProceduralDistractor, composite_distractor, mask_background
 
 
 class PixelDMCEnv:
@@ -39,6 +39,7 @@ class PixelDMCEnv:
         camera_id: int = 0,
         distractor: bool = False,
         distractor_seed: int | None = None,
+        masked_target: bool = False,
     ) -> None:
         domain, t = parse_task(task)
         self.task = task
@@ -47,6 +48,9 @@ class PixelDMCEnv:
         self.frame_stack = int(frame_stack)
         self._cam = int(camera_id)
         self.distractor = bool(distractor)
+        # R20: also maintain a parallel ROBOT-ONLY (background-zeroed) frame stack for the JEPA
+        # masked consistency target. masked_obs() returns the stacked robot-only obs.
+        self.masked_target = bool(masked_target)
         self._env = suite.load(domain, t, task_kwargs={"random": seed})
 
         aspec = self._env.action_spec()
@@ -56,6 +60,7 @@ class PixelDMCEnv:
 
         self.obs_shape = (3 * self.frame_stack, self.size, self.size)
         self._frames: deque[np.ndarray] = deque(maxlen=self.frame_stack)
+        self._mframes: deque[np.ndarray] = deque(maxlen=self.frame_stack)  # robot-only (masked)
         self._step_count = 0
         self._last_rgb = np.zeros((self.size, self.size, 3), np.uint8)
         d_seed = seed if distractor_seed is None else int(distractor_seed)
@@ -64,37 +69,62 @@ class PixelDMCEnv:
         )
 
     # --- rendering ----------------------------------------------------------------
-    def _render_rgb(self) -> np.ndarray:
-        """Render one (size, size, 3) uint8 RGB frame, distractor-composited if enabled."""
+    def _render_pair(self) -> tuple[np.ndarray, np.ndarray | None]:
+        """Render once; return (full, masked). `full` is the distractor-composited (or clean) RGB
+        the agent sees; `masked` is the robot-only (background-zeroed) RGB for the JEPA target
+        stream (None unless masked_target). A SINGLE clean render + seg feeds both, so they are
+        pixel-aligned."""
         phys = self._env.physics
-        rgb = phys.render(height=self.size, width=self.size, camera_id=self._cam)
-        if self._distractor is not None:
+        clean = np.asarray(phys.render(height=self.size, width=self.size, camera_id=self._cam))
+        seg = None
+        if self._distractor is not None or self.masked_target:
             seg = phys.render(
                 height=self.size, width=self.size, camera_id=self._cam, segmentation=True
             )
-            distractor_rgb = self._distractor.frame(self._step_count)
-            rgb = composite_distractor(rgb, seg, distractor_rgb)
-        return np.asarray(rgb, np.uint8)
+        if self._distractor is not None:
+            full = composite_distractor(clean, seg, self._distractor.frame(self._step_count))
+        else:
+            full = clean
+        masked = mask_background(clean, seg) if self.masked_target else None
+        return np.asarray(full, np.uint8), (None if masked is None else np.asarray(masked, np.uint8))
 
-    def _stacked_obs(self) -> np.ndarray:
+    def _render_rgb(self) -> np.ndarray:
+        """Back-compat: the full (possibly distracted) frame only."""
+        return self._render_pair()[0]
+
+    def _stack(self, frames: deque) -> np.ndarray:
         """Concatenate the k cached HxWx3 frames on the channel axis -> (3*k, size, size)."""
-        # each frame HWC -> CHW, then stack on channel axis
-        chw = [f.transpose(2, 0, 1) for f in self._frames]
+        chw = [f.transpose(2, 0, 1) for f in frames]
         return np.concatenate(chw, axis=0).astype(np.uint8)
 
-    def _push_frame(self, rgb: np.ndarray) -> None:
-        self._last_rgb = rgb
-        self._frames.append(rgb)
+    def _stacked_obs(self) -> np.ndarray:
+        return self._stack(self._frames)
+
+    def masked_obs(self) -> np.ndarray:
+        """The stacked ROBOT-ONLY (background-zeroed) obs, (3*k,size,size) uint8. Requires
+        masked_target=True. Mirrors the full obs stack so the buffer stores aligned pairs."""
+        if not self.masked_target:
+            raise RuntimeError("masked_obs() requires masked_target=True")
+        return self._stack(self._mframes)
+
+    def _push_frame(self, full: np.ndarray, masked: np.ndarray | None = None) -> None:
+        self._last_rgb = full
+        self._frames.append(full)
+        if self.masked_target:
+            self._mframes.append(masked if masked is not None else np.zeros_like(full))
 
     # --- gym-ish API --------------------------------------------------------------
     def reset(self) -> np.ndarray:
         self._env.reset()
         self._step_count = 0
-        rgb = self._render_rgb()
+        full, masked = self._render_pair()
         self._frames.clear()
-        for _ in range(self.frame_stack):  # fill the stack with the first frame
-            self._frames.append(rgb)
-        self._last_rgb = rgb
+        self._mframes.clear()
+        for _ in range(self.frame_stack):  # fill both stacks with the first frame
+            self._frames.append(full)
+            if self.masked_target:
+                self._mframes.append(masked if masked is not None else np.zeros_like(full))
+        self._last_rgb = full
         return self._stacked_obs()
 
     def step(self, action) -> tuple[np.ndarray, float, bool]:
@@ -109,7 +139,8 @@ class PixelDMCEnv:
             if ts.last():
                 break
         self._step_count += 1
-        self._push_frame(self._render_rgb())
+        full, masked = self._render_pair()
+        self._push_frame(full, masked)
         return self._stacked_obs(), total_r, bool(ts.last())
 
     def render(self) -> np.ndarray:

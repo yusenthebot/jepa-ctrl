@@ -153,18 +153,26 @@ class WorldModel(nn.Module):
         obs_seq: torch.Tensor,
         action_seq: torch.Tensor,
         latents: list[torch.Tensor],
+        target_obs_seq: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Consistency loss reusing pre-rolled latents (shared with reward grounding).
 
-        latents: [z_0, z_hat_1, .., z_hat_H] from rollout_latents. Uses latents[k] (= the
-        predicted latent of o_{t+k}) for k=1..H; latents[0] is the encoding of o_t and is not
-        scored against a target here. L = sum_{k=1..H} rho^k * smooth_l1(latents[k], f_xi(o_{t+k})).
+        latents: [z_0, z_hat_1, .., z_hat_H] from rollout_latents (online, on the FULL obs). Uses
+        latents[k] (= the predicted latent of o_{t+k}) for k=1..H. L = sum_{k=1..H} rho^k *
+        smooth_l1(latents[k], f_xi(target_obs[t+k])).
+
+        target_obs_seq (R20 MASKED-TARGET): if given, the stop-grad EMA target is computed on THIS
+        stream (e.g. the robot-only masked frames) instead of obs_seq, while the online rollout
+        latents were produced from the full (distractor) obs_seq. That cross-stream asymmetry —
+        unavailable to a single-encoder recon/reward model — pressures the online encoder to map
+        (robot+distractor) onto the (robot-only) latent, learning to ignore the background.
         """
         cfg = self.cfg
+        tgt_seq = obs_seq if target_obs_seq is None else target_obs_seq
         h = action_seq.shape[0]
         loss = obs_seq.new_zeros(())
         for k in range(1, h + 1):
-            target = self.encode_target(obs_seq[k])  # stop-grad inside
+            target = self.encode_target(tgt_seq[k])  # stop-grad inside
             loss = loss + (cfg.rho**k) * F.smooth_l1_loss(latents[k], target)
         return loss
 

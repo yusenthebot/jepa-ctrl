@@ -28,18 +28,29 @@ class PixelReplayBuffer:
         act_dim: int,
         frame_stack: int = 3,
         device: torch.device | str = "cpu",
+        masked: bool = False,
     ) -> None:
         self.capacity = int(capacity)
         self.frame_shape = tuple(int(x) for x in frame_shape)  # (3, H, W)
         self.act_dim = int(act_dim)
         self.frame_stack = int(frame_stack)
         self.device = torch.device(device)
+        # R20 masked-target: store a parallel ROBOT-ONLY frame stream (background zeroed) so the JEPA
+        # consistency TARGET can be encode_target(obs_masked) while the online stream uses obs_full.
+        self.masked = bool(masked)
         c, h, w = self.frame_shape
         self.obs_shape = (c * self.frame_stack, h, w)
         self._frame = torch.zeros(self.capacity, c, h, w, dtype=torch.uint8, device=self.device)
         self._next_frame = torch.zeros(
             self.capacity, c, h, w, dtype=torch.uint8, device=self.device
         )
+        if self.masked:
+            self._mframe = torch.zeros(
+                self.capacity, c, h, w, dtype=torch.uint8, device=self.device
+            )
+            self._mnext_frame = torch.zeros(
+                self.capacity, c, h, w, dtype=torch.uint8, device=self.device
+            )
         self._action = torch.zeros(self.capacity, act_dim, device=self.device)
         self._reward = torch.zeros(self.capacity, device=self.device)
         self._done = torch.zeros(self.capacity, dtype=torch.bool, device=self.device)
@@ -55,14 +66,19 @@ class PixelReplayBuffer:
     @property
     def nbytes(self) -> int:
         """Total bytes of the frame stores (the dominant term) — for the memory budget check."""
-        return self._frame.element_size() * self._frame.nelement() * 2  # frame + next_frame
+        streams = 4 if self.masked else 2  # (frame,next) x (full[,masked])
+        return self._frame.element_size() * self._frame.nelement() * streams
 
     @staticmethod
-    def estimate_nbytes(capacity: int, frame_shape: tuple[int, int, int]) -> int:
+    def estimate_nbytes(
+        capacity: int, frame_shape: tuple[int, int, int], masked: bool = False
+    ) -> int:
         """Frame-store bytes for a (capacity, frame_shape) WITHOUT allocating — so a memory-budget
-        check (or capacity planner) never has to fault in the buffer it is sizing."""
+        check (or capacity planner) never has to fault in the buffer it is sizing. masked=True
+        doubles it (a parallel robot-only stream)."""
         c, h, w = (int(x) for x in frame_shape)
-        return int(capacity) * c * h * w * 2  # uint8, frame + next_frame
+        streams = 4 if masked else 2
+        return int(capacity) * c * h * w * streams  # uint8
 
     def add(
         self,
@@ -72,12 +88,22 @@ class PixelReplayBuffer:
         next_frame: torch.Tensor,
         done: bool,
         first: bool = False,
+        masked_frame: torch.Tensor | None = None,
+        masked_next_frame: torch.Tensor | None = None,
     ) -> None:
         """Append one transition. `frame`/`next_frame` are single (3,H,W) uint8 RGB frames
-        (o_t, o_{t+1}); `first` flags the episode's opening transition."""
+        (o_t, o_{t+1}); `first` flags the episode's opening transition. When the buffer is
+        `masked`, masked_frame/masked_next_frame (robot-only, bg zeroed) are required."""
         i = self._pos
         self._frame[i] = torch.as_tensor(frame, dtype=torch.uint8, device=self.device)
         self._next_frame[i] = torch.as_tensor(next_frame, dtype=torch.uint8, device=self.device)
+        if self.masked:
+            if masked_frame is None or masked_next_frame is None:
+                raise ValueError("masked buffer requires masked_frame and masked_next_frame")
+            self._mframe[i] = torch.as_tensor(masked_frame, dtype=torch.uint8, device=self.device)
+            self._mnext_frame[i] = torch.as_tensor(
+                masked_next_frame, dtype=torch.uint8, device=self.device
+            )
         self._action[i] = torch.as_tensor(action, dtype=torch.float32, device=self.device)
         self._reward[i] = float(reward)
         self._done[i] = bool(done)
@@ -86,12 +112,14 @@ class PixelReplayBuffer:
         if self._pos == 0:
             self._full = True
 
-    def _stack_at(self, idx: torch.Tensor) -> torch.Tensor:
+    def _stack_at(self, idx: torch.Tensor, store: torch.Tensor | None = None) -> torch.Tensor:
         """Build (B, k*3, H, W) uint8 stacks ending at flat indices `idx` (no episode straddle).
 
         Walks back up to k-1 steps; once a `first` (episode start) is hit the remaining older
-        frames are clamped to that first frame.
+        frames are clamped to that first frame. `store` selects the frame tensor (default the full
+        stream); pass self._mframe for the masked robot-only stream.
         """
+        store = self._frame if store is None else store
         k = self.frame_stack
         b = idx.shape[0]
         c, h, w = self.frame_shape
@@ -104,7 +132,7 @@ class PixelReplayBuffer:
             cur = torch.where(stop, cur, prev)  # frozen rows keep their (clamped) index
             rows[:, k - 1 - back] = cur
             stop = stop | self._first[cur]  # once we step ONTO a first frame, clamp from here on
-        frames = self._frame[rows.reshape(-1)].reshape(b, k, c, h, w)
+        frames = store[rows.reshape(-1)].reshape(b, k, c, h, w)
         return frames.reshape(b, k * c, h, w)
 
     def sample_subtraj(self, batch: int, length: int) -> dict[str, torch.Tensor]:
@@ -130,7 +158,13 @@ class PixelReplayBuffer:
         obs_seq = torch.cat([obs, last_next], dim=0)  # (length+1, B, kc, H, W)
         action_seq = self._action[rows].transpose(0, 1)
         reward = self._reward[rows].transpose(0, 1)
-        return {"obs_seq": obs_seq, "action_seq": action_seq, "reward": reward}
+        out = {"obs_seq": obs_seq, "action_seq": action_seq, "reward": reward}
+        if self.masked:
+            # parallel ROBOT-ONLY stacks, same windows -> the JEPA consistency target stream.
+            m_steps = [self._stack_at(rows[:, j], self._mframe) for j in range(length)]
+            m_last = self._stack_at(last_next_idx, self._mframe).unsqueeze(0)
+            out["obs_masked_seq"] = torch.cat([torch.stack(m_steps, dim=0), m_last], dim=0)
+        return out
 
     def _valid_starts(self, length: int, batch: int) -> torch.Tensor:
         """Rejection-sample non-wrapped start indices whose first `length` steps contain no
@@ -183,6 +217,7 @@ class ReplayBuffer:
         self.obs_dim = int(obs_dim)
         self.act_dim = int(act_dim)
         self.device = torch.device(device)
+        self.masked = False  # state buffer never has a masked-target stream (uniform contract)
         self._obs = torch.zeros(self.capacity, obs_dim, device=self.device)
         self._next_obs = torch.zeros(self.capacity, obs_dim, device=self.device)
         self._action = torch.zeros(self.capacity, act_dim, device=self.device)

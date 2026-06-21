@@ -31,7 +31,7 @@ from jepa_ctrl.model.trainer import TrainConfig, Trainer
 from jepa_ctrl.render import contact_sheet, save_mp4
 from jepa_ctrl.seeding import set_seed
 
-_PIXELS = {"on": False, "distractor": False, "size": 84, "frame_stack": 3}
+_PIXELS = {"on": False, "distractor": False, "size": 84, "frame_stack": 3, "masked_target": False}
 
 
 def make_env(task: str, seed: int, action_repeat: int):
@@ -40,7 +40,7 @@ def make_env(task: str, seed: int, action_repeat: int):
         from jepa_ctrl.pixel_env import PixelDMCEnv
         return PixelDMCEnv(task, seed=seed, action_repeat=action_repeat, size=_PIXELS["size"],
                            frame_stack=_PIXELS["frame_stack"], distractor=_PIXELS["distractor"],
-                           distractor_seed=seed + 7)
+                           distractor_seed=seed + 7, masked_target=_PIXELS["masked_target"])
     return DMCEnv(task, seed=seed, action_repeat=action_repeat)
 
 
@@ -172,6 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pixels", action="store_true", help="pixel obs + CNN encoder instead of state")
     p.add_argument("--distractor", action="store_true",
                    help="composite a time-varying background distractor (pixels only)")
+    p.add_argument("--masked-target", action="store_true",
+                   help="R20: JEPA masked-target stream — EMA consistency target sees robot-only "
+                        "(bg-zeroed) frames while online sees the full distractor obs (pixels only)")
     p.add_argument("--size", type=int, default=84)
     p.add_argument("--frame-stack", type=int, default=3)
     p.add_argument("--device", default="cuda")
@@ -188,6 +191,7 @@ def train_config_from_args(a: argparse.Namespace, pixels: bool) -> TrainConfig:
         explore_std=a.explore_std, explore_std_end=a.explore_std_end,
         explore_anneal_steps=a.explore_anneal_steps,
         reset_curriculum=a.reset_curriculum, reset_p=a.reset_p,
+        masked_target=a.masked_target,
         capacity=50_000 if pixels else 1_000_000)  # stacked uint8 buffer ~6.3GB
 
 
@@ -223,7 +227,8 @@ def main() -> None:
     out = Path(a.outdir)
     out.mkdir(parents=True, exist_ok=True)
 
-    _PIXELS.update(on=a.pixels, distractor=a.distractor, size=a.size, frame_stack=a.frame_stack)
+    _PIXELS.update(on=a.pixels, distractor=a.distractor, size=a.size, frame_stack=a.frame_stack,
+                   masked_target=a.masked_target)
     env = make_env(a.task, a.seed, a.action_repeat)
     latent_norm = a.latent_norm if a.latent_norm != "auto" else (
         "none" if a.grounding == "sigreg" else "simnorm")  # SIGReg needs RAW; else override-able
