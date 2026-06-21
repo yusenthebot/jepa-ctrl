@@ -217,6 +217,51 @@ def test_disagreement_planner_with_intrinsic_value_bootstraps_terminal():
     assert a.shape == (ACT,) and torch.isfinite(a).all()
 
 
+def test_goal_objective_validation_and_requires_set_goal():
+    MPPIConfig(objective="goal")
+    wm = WorldModel(_cfg(5))
+    planner = _planner(wm, "goal")
+    try:
+        planner._score(wm.encode_pre(torch.randn(2, OBS)), torch.randn(3, 2, ACT))
+        raise AssertionError("expected RuntimeError before set_goal")
+    except RuntimeError:
+        pass
+
+
+def test_set_goal_encodes_simnorm_latent():
+    wm = WorldModel(_cfg(5))
+    planner = _planner(wm, "goal")
+    planner.set_goal(torch.randn(OBS))
+    assert planner.goal_z is not None
+    assert planner.goal_z.shape == (1, LD)
+
+
+def test_goal_score_higher_when_rollout_nearer_goal():
+    """The goal score must prefer trajectories whose rolled latents land nearer the goal latent.
+    Build two action sets; set the goal to the terminal latent of set A -> A must outscore B."""
+    wm = WorldModel(_cfg(5))
+    planner = _planner(wm, "goal")
+    z0 = wm.encode_pre(torch.randn(1, OBS)).expand(2, -1).contiguous()
+    a_good = torch.zeros(3, 2, ACT)            # one deterministic trajectory (both rows identical)
+    a_bad = torch.ones(3, 2, ACT)
+    # goal = the SimNorm latent the GOOD actions actually reach at the final step
+    z_good_final = wm.rollout(z0[:1], a_good[:, :1])[-1]  # (1, LD) SimNorm
+    planner.goal_z = z_good_final
+    s_good = planner._score(z0[:1], a_good[:, :1])
+    s_bad = planner._score(z0[:1], a_bad[:, :1])
+    assert s_good.item() > s_bad.item(), "goal score must reward reaching the goal latent"
+    assert s_good.item() <= 1e-5, "score is negative distance; reaching the goal -> ~0 (max)"
+
+
+def test_goal_planner_returns_valid_action():
+    wm = WorldModel(_cfg(5))
+    planner = _planner(wm, "goal")
+    planner.set_goal(torch.randn(OBS))
+    a = planner.plan(torch.randn(OBS))
+    assert a.shape == (ACT,) and torch.isfinite(a).all()
+    assert torch.all(a >= -1.0) and torch.all(a <= 1.0)
+
+
 def test_disagreement_score_matches_manual_rollout():
     """_score_disagreement = discounted sum of per-step ensemble disagreement along the shared
     open-loop rollout. Verify against a hand rollout so the planner optimises the real signal."""

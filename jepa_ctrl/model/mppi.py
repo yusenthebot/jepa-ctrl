@@ -36,9 +36,9 @@ class MPPIConfig:
             raise ValueError("num_elites cannot exceed num_samples")
         if not 0.0 <= self.corr < 1.0:
             raise ValueError("corr must be in [0, 1)")
-        if self.objective not in ("reward", "disagreement", "hybrid"):
+        if self.objective not in ("reward", "disagreement", "hybrid", "goal"):
             raise ValueError(
-                f"objective must be 'reward'|'disagreement'|'hybrid', got {self.objective!r}"
+                f"objective must be 'reward'|'disagreement'|'hybrid'|'goal', got {self.objective!r}"
             )
 
 
@@ -80,6 +80,18 @@ class MPPIPlanner:
         # 1->0 over training so collection explores early and exploits the task reward late. Inert
         # unless cfg.objective=="hybrid".
         self.explore_beta: float = 1.0
+        # goal objective (R21): SimNorm latent of the goal obs, set via set_goal(). The planner scores
+        # trajectories by NEGATIVE latent distance to it — reward-free, decoder-free goal-reaching.
+        self.goal_z: torch.Tensor | None = None
+
+    @torch.no_grad()
+    def set_goal(self, goal_obs: torch.Tensor) -> None:
+        """Set the goal as the SimNorm latent of `goal_obs` (state vec or pixel frame). The goal
+        objective then drives the rollout toward this latent. Reward-free / decoder-free."""
+        g = torch.as_tensor(goal_obs, dtype=torch.float32, device=self.device)
+        if g.ndim in (1, 3):
+            g = g.unsqueeze(0)
+        self.goal_z = self.model.encode(g)  # (1, latent) SimNorm — same space as rollout latents
 
     def reset(self) -> None:
         """Drop the warm-start prior (call between episodes)."""
@@ -98,7 +110,24 @@ class MPPIPlanner:
             return self._score_reward(z0_pre, actions) + self.explore_beta * self._score_disagreement(
                 z0_pre, actions
             )
+        if obj == "goal":
+            return self._score_goal(z0_pre, actions)
         return self._score_reward(z0_pre, actions)
+
+    @torch.no_grad()
+    def _score_goal(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+        """Reward-free GOAL-reaching score: NEGATIVE discounted latent distance to goal_z along the
+        rollout (closer to the goal latent each step = higher score). SimNorm latents, MSE distance.
+        No reward/value/decoder consulted. actions: (H, N, act_dim) -> (N,). Requires set_goal()."""
+        if self.goal_z is None:
+            raise RuntimeError("goal objective requires set_goal() first")
+        cfg = self.cfg
+        preds = self.model.rollout(z0_pre, actions)  # H x (N, latent) SimNorm
+        score = z0_pre.new_zeros(actions.shape[1])
+        for h, z_h in enumerate(preds):
+            dist = ((z_h - self.goal_z) ** 2).mean(dim=-1)  # (N,)
+            score = score - (cfg.gamma**h) * dist
+        return score
 
     @torch.no_grad()
     def _score_reward(self, z0_pre: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
