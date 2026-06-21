@@ -19,8 +19,11 @@ canary:   cheetah-run masked-JEPA CLEAN = 55.4 vs standard-JEPA 341 (R9) => CLEA
   GROUND which cheetah locomotion needs (ground is obj-1 background but task-relevant). cheetah = wrong
   testbed. Distractor run aborted (uninterpretable off broken clean).
 in_flight: R20 DIAGNOSTIC (scripts/r20_diag.sh cartpole-balance 60k): standard-clean then masked-clean,
-  64px seed0 (~1.2h). log runs/R20diag_campaign.log. Tests if masked-target breaks clean control
-  GENERALLY or only on locomotion.
+  64px seed0 (~1.2h). log runs/R20diag_campaign.log.
+PRELIM:   standard pixel cartpole-balance = 993.7 (great). masked at 40k=332 vs standard 40k=989 ->
+  LAGGING ~3x even on bg-IRRELEVANT task. If masked 60k final << 993 => cause is the CROSS-STREAM
+  INPUT GAP (online full-scene vs target robot-on-black), a DEEPER flaw than cheetah's ground => pivot
+  to goal-image-latent-control. Await masked 60k final before concluding (still climbing 247->332).
 blocked:  none
 next:     When diag done (waiter): compare masked vs standard clean cartpole-balance. IF masked ~
   standard (both high) => cheetah's ground was the issue, masked-target VIABLE -> find a HARD
