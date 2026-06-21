@@ -550,6 +550,29 @@ sparse-task control, laptop-scale JEPA-MPPI:
 - **Leg 5 — acrobot-swingup_sparse (hard stretch): SHELVED** (cartpole already shows the wall is
   downstream; a harder task won't change that diagnosis).
 
+### R20 (2026-06-21) — JEPA MASKED-TARGET distractor robustness (rung 2, architectural)
+Decision Workflow (4 cand + Opus judge) after R19 picked this: feed the stop-grad EMA TARGET encoder a
+ROBOT-ONLY (background-zeroed) image while the online encoder + planner see the FULL distractor obs;
+the consistency loss pressures latent(robot+distractor) → latent(robot-only) so the online encoder
+learns to ignore the background. Structurally impossible for a single-encoder recon (Dreamer) / reward
+(TD-MPC2) model — recruits JEPA's two-stream asymmetry for cross-stream visual invariance. Aimed at
+R9's standing negative (cheetah-run 64px: JEPA clean 341 → distractor 60, 82% collapse).
+- **Build (committed, suite 139p):** mask_background (zero bg/keep robot) + PixelDMCEnv dual-render +
+  masked_obs(); PixelReplayBuffer dual-store byte-budgeted; consistency_loss_from(target_obs_seq=...);
+  trainer + train.py --masked-target. Step-2 eyes-on de-risk PASSED (mask clean: cheetah legs+feet
+  kept, distractor 100% zeroed) — so the seg-noise risk the judge flagged is NOT the failure mode.
+- **CANARY on cheetah-run — CLEAN-BASELINE KILL (honest):** masked-JEPA CLEAN = **55.4** vs
+  standard-JEPA clean **341** (R9, same 64px/100k) — a 6× regression. The mask BREAKS clean cheetah
+  control. Diagnosis: cheetah-run is LOCOMOTION — the ground/floor is a task-relevant velocity/contact
+  reference, but it is segmented as background (obj −1) and zeroed in the target, so consistency forces
+  the online encoder to discard it. cheetah-run is the WRONG testbed: the masked region is task-relevant.
+  Per the pre-registered kill, the distractor column is uninterpretable off a broken clean baseline →
+  cheetah canary aborted.
+- **Next (discriminate the cause):** masked-JEPA vs standard-JEPA CLEAN on a BACKGROUND-IRRELEVANT task
+  (cartpole-balance: safe-learnable, bg irrelevant). If masked ≈ standard → ground-relevance confirmed,
+  masked-target viable (find a HARD bg-irrelevant task for the robustness gap). If masked << standard
+  there too → the cross-stream gap is a deeper flaw → pivot to goal-image-latent-control (judge rank 2).
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
