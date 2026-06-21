@@ -122,10 +122,14 @@ class MPPIPlanner:
         if self.goal_z is None:
             raise RuntimeError("goal objective requires set_goal() first")
         cfg = self.cfg
+        qm = self.model.quasimetric_head  # R22: learned reachability metric if attached, else L2
         preds = self.model.rollout(z0_pre, actions)  # H x (N, latent) SimNorm
         score = z0_pre.new_zeros(actions.shape[1])
         for h, z_h in enumerate(preds):
-            dist = ((z_h - self.goal_z) ** 2).mean(dim=-1)  # (N,)
+            if qm is not None:
+                dist = qm(z_h, self.goal_z.expand_as(z_h))  # (N,) quasimetric steps-to-go
+            else:
+                dist = ((z_h - self.goal_z) ** 2).mean(dim=-1)  # (N,) latent-L2 fallback
             score = score - (cfg.gamma**h) * dist
         return score
 

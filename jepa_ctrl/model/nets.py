@@ -335,3 +335,30 @@ class InverseDynamicsHead(nn.Module):
     def forward(self, z_t: torch.Tensor, z_next: torch.Tensor) -> torch.Tensor:
         """z_t, z_next: (..., latent_dim). Returns predicted action (..., act_dim)."""
         return self.net(torch.cat([z_t, z_next], dim=-1))
+
+
+class QuasimetricHead(nn.Module):
+    """R22 asymmetric QUASIMETRIC on latents (QRL/IQE-style) — a learned reachability distance that
+    fixes what L2 on the SimNorm latent cannot (R21: latent-L2 vs true-distance rho=0.23).
+
+    A potential map v: latent -> R^k (small MLP); d(z_s, z_g) = sum_k relu(v(z_g)_k - v(z_s)_k).
+    Satisfies d>=0, d(z,z)=0, and the TRIANGLE INEQUALITY by construction (subadditivity of relu:
+    relu(a+b) <= relu(a)+relu(b)); ASYMMETRIC (d(s,g) != d(g,s)) — the right inductive bias for a
+    steps-to-go goal metric. Trained on a FROZEN control encoder (local hinge d<=gap on real pairs +
+    contrastive spread on random pairs), so the working control representation is never disturbed.
+    """
+
+    def __init__(self, latent_dim: int, k: int = 64, hidden: int = 256) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, hidden), nn.Mish(),
+            nn.Linear(hidden, hidden), nn.Mish(),
+            nn.Linear(hidden, k),
+        )
+
+    def potentials(self, z: torch.Tensor) -> torch.Tensor:
+        return self.net(z)  # (..., k)
+
+    def forward(self, z_s: torch.Tensor, z_g: torch.Tensor) -> torch.Tensor:
+        """Quasimetric distance s->g, shape = batch dims of z_s/z_g (broadcast)."""
+        return torch.relu(self.potentials(z_g) - self.potentials(z_s)).sum(dim=-1)

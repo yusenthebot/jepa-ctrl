@@ -79,6 +79,10 @@ class WorldModel(nn.Module):
         # so the distributional head + planner share one consistent unit. Always registered (inert
         # when no explore head) so checkpoints round-trip regardless of the flag.
         self.register_buffer("disag_scale", torch.ones(()))
+        # R22: optional attachable QUASIMETRIC goal-distance head (trained offline on the frozen
+        # encoder). Default None = no behavior change; the planner's goal objective uses it when set,
+        # else falls back to latent-L2. Kept off the cfg so prior runs/checkpoints are byte-identical.
+        self.quasimetric_head: nn.Module | None = None
         if cfg.explore_value:
             self.explore_value_head: DistHead | None = DistHead(
                 ld, ad, cfg.pred_hidden, cfg.bins, cfg.vmin, cfg.vmax, num_q=cfg.num_q

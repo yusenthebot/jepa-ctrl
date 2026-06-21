@@ -44,6 +44,10 @@ def main() -> None:
     p.add_argument("--action-repeat", type=int, default=2)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--success-frac", type=float, default=0.33, help="success if final < frac*initial")
+    p.add_argument("--quasimetric-head", default="", help="R22: path to a trained IQE head (.pt) to "
+                   "attach as the goal metric (else latent-L2)")
+    p.add_argument("--shuffle-goals", action="store_true", help="red-flag control: permute goals vs "
+                   "starts; a real goal-reacher must collapse to ~random under this")
     p.add_argument("--device", default="cuda")
     a = p.parse_args()
     device = a.device if (a.device != "cuda" or torch.cuda.is_available()) else "cpu"
@@ -51,6 +55,13 @@ def main() -> None:
 
     env = DMCEnv(a.task, seed=a.seed, action_repeat=a.action_repeat)
     wm = load_wm(a.ckpt, env.obs_dim, env.act_dim, device)
+    if a.quasimetric_head:  # R22: attach the trained IQE head so goal-MPPI uses it instead of L2
+        from jepa_ctrl.model.nets import QuasimetricHead
+        hd = torch.load(a.quasimetric_head, map_location=device)
+        qm = QuasimetricHead(hd["latent_dim"], k=hd["k"]).to(device)
+        qm.load_state_dict(hd["state_dict"]); qm.eval()
+        wm.quasimetric_head = qm
+        print(f"[goal_eval] attached quasimetric head {a.quasimetric_head} (k={hd['k']})")
     cfg = MPPIConfig(horizon=5, iters=6, num_samples=512, num_elites=64, objective="goal")
     planner = MPPIPlanner(wm, cfg, env.act_low, env.act_high, device=device)
     rng = np.random.default_rng(a.seed)
@@ -80,10 +91,14 @@ def main() -> None:
     goal_ratios, rand_ratios, succ, rand_succ = [], [], 0, 0
     goal_pratios, rand_pratios, psucc, rand_psucc = [], [], 0, 0
     n = min(a.n_goals, len(traj_state) - a.horizon_gap - 1)
+    # shuffle-goals red-flag control: pair each start with ANOTHER start's hindsight goal, breaking the
+    # start->goal reachability correspondence. A real goal-reacher must collapse toward random here.
+    gperm = rng.permutation(n) if a.shuffle_goals else np.arange(n)
     for i in range(n):
         start_state = traj_state[i]
-        goal_state = traj_state[i + a.horizon_gap]
-        goal_obs = traj_obs[i + a.horizon_gap]
+        gidx = gperm[i] + a.horizon_gap
+        goal_state = traj_state[gidx]
+        goal_obs = traj_obs[gidx]
         d0 = dist(start_state, goal_state)
         p0 = pdist(start_state, goal_state)
         if d0 < 1e-6 or p0 < 1e-6:

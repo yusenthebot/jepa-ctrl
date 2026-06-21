@@ -253,6 +253,34 @@ def test_goal_score_higher_when_rollout_nearer_goal():
     assert s_good.item() <= 1e-5, "score is negative distance; reaching the goal -> ~0 (max)"
 
 
+def test_quasimetric_axioms():
+    """R22: the quasimetric head must satisfy d>=0, d(z,z)=0, and the triangle inequality."""
+    from jepa_ctrl.model.nets import QuasimetricHead
+    qm = QuasimetricHead(LD, k=16, hidden=32)
+    a, b, c = torch.randn(8, LD), torch.randn(8, LD), torch.randn(8, LD)
+    assert torch.all(qm(a, b) >= 0)
+    assert torch.allclose(qm(a, a), torch.zeros(8), atol=1e-6)
+    # triangle: d(a,c) <= d(a,b) + d(b,c)  (allow tiny numerical slack)
+    assert torch.all(qm(a, c) <= qm(a, b) + qm(b, c) + 1e-4)
+    # asymmetric in general: d(a,b) != d(b,a) for some pair
+    assert (qm(a, b) - qm(b, a)).abs().max() > 1e-4
+
+
+def test_goal_planner_uses_quasimetric_head_when_attached():
+    """When wm.quasimetric_head is set, the goal score uses it instead of latent-L2."""
+    from jepa_ctrl.model.nets import QuasimetricHead
+    wm = WorldModel(_cfg(5))
+    planner = _planner(wm, "goal")
+    z0 = wm.encode_pre(torch.randn(1, OBS)).expand(4, -1).contiguous()
+    actions = torch.randn(3, 4, ACT).clamp(-1, 1)
+    planner.set_goal(torch.randn(OBS))
+    s_l2 = planner._score(z0, actions).clone()
+    wm.quasimetric_head = QuasimetricHead(LD, k=16, hidden=32)
+    s_qm = planner._score(z0, actions)
+    assert not torch.allclose(s_l2, s_qm), "attaching the quasimetric head must change the goal score"
+    assert torch.isfinite(s_qm).all()
+
+
 def test_goal_planner_returns_valid_action():
     wm = WorldModel(_cfg(5))
     planner = _planner(wm, "goal")
