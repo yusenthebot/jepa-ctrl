@@ -1,32 +1,27 @@
 # STATUS — main
-updated: 2026-06-21 · loop 21 (consolidation)
+updated: 2026-06-21 · loop 22 (consolidation)
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    run — R22 goal-eval LIVE (IQE quasimetric vs L2 vs shuffled, reacher-easy); head built+gated
+phase:    decide — R22 closed; pick next rung (returns diminishing on capability add-ons)
 owns:     whole repo (single session)
-state:    Session arc R18-R21 recorded (progress.md) + persisted to memory (project_jepa_ctrl).
-  R18 disagreement CALIBRATION = PASS (rho 0.91/0.95). R19 disagreement EXPLORATION = discovery WIN
-  (140-750x, iv>myopic) / control NEGATIVE (wall downstream). R20 masked-target distractor robustness
-  = NEGATIVE (cross-stream OOD; clean-target ratio 0.23~standard). R21 latent-distance goal-reaching =
-  NEGATIVE (control-trained latent is NOT a goal metric: latent-MSE vs true-pos-dist rho=0.23; 0% reach
-  even healthy model). Two consecutive pivot-negatives => consolidated rather than thrash.
-recurring: capabilities (control/robustness/goal-reaching) do NOT come free from a consistency-trained
-  JEPA latent — each needs its OWN structural pressure.
-r22:      Design Workflow -> IQE QUASIMETRIC head (frozen encoder; d=sum relu(v(g)-v(s)), triangle by
-  construction). Built (nets QuasimetricHead + WorldModel attachable slot + MPPI goal uses it + 2 tests).
-  RHO PRE-CHECK (reacher-easy R6): quasimetric 0.70 vs latent-L2 0.66 BOTH decent => R21 rho=0.23 was
-  POINT_MASS DEGENERACY (qpos span 0.03), not a latent flaw; reacher latent is already ~goal-metric.
-result:   goal-eval reacher-easy (pos metric, n=20): L2 0.47/0.30 BEATS random 1.71/0.0 (latent-L2
-  goal-MPPI partially REACHES — R21 negative was point_mass-degenerate). IQE quasimetric 2.24/0.10
-  (WORSE, ~=its shuffle) — R22's bet FAILED, L2 better. L2 shuffled 0.63/0.20 still >>random => goal-
-  conditional gap within noise at n=20 (reacher geometry).
-in_flight: R22 POWERED (/tmp/r22_powered.sh -> runs/R22_powered.log): L2 normal-vs-shuffled n=40 on R6
-  s0,s1 (~45min) to settle if the goal-conditional effect is real vs reacher geometry.
+state:    Session arc R18-R22 (all recorded progress.md + memory project_jepa_ctrl):
+  R18 disagreement CALIBRATION = PASS. R19 disagreement EXPLORATION = discovery WIN / control NEGATIVE
+  (wall downstream). R20 masked-target distractor robustness = NEGATIVE. R21 latent-distance goal-
+  reaching = NEGATIVE *but was point_mass-degenerate*. R22 quasimetric goal-metric: BET FAILED (IQE
+  worse than plain L2 for MPPI) BUT corrected R21 — reward-free latent-L2 goal-MPPI achieves REAL but
+  MODEST goal-conditional reaching on reacher-easy (n=40 cross-ckpt: NORMAL 0.45 < SHUFFLED 0.65 <
+  random 1.3 on s0,s1). Net positives this session: R18 calib, R19 discovery, R22 L2-goal(modest).
+recurring: capabilities don't come free from a consistency-trained JEPA latent — each needs its own
+  structural pressure; validate with red-flag controls (shuffle) + non-degenerate tasks; a fancier
+  metric (quasimetric) can underperform plain L2 for MPPI planning.
+in_flight: NOTHING running. GPU free. All committed; suite green (~145p); memory updated.
 blocked:  none
-next:     When powered done (waiter): if L2 NORMAL consistently < SHUFFLED across s0,s1 at n=40 (gap
-  beyond noise) => real reward-free goal-conditional reaching on reacher (modest WIN, corrects R21) ->
-  eyes-on a rollout render + RECORD; quasimetric = characterized negative (worse than L2). If normal≈
-  shuffled => "reaching" is mostly reacher geometry, not goal-conditioning => HONEST near-negative; the
-  goal-reaching capability isn't really there -> consolidate R22 (quasimetric failed + L2-modest) and
-  Decision Workflow for the next rung (judge #3 downstream-grounding-fix, or deepen GROUNDLESS).
+next:     Returns diminishing on add-ons (R20/R21/R22-bet negative) over MANY rounds => do NOT chase a
+  6th adjacent build blind. At next cold-start pick via a focused DECISION WORKFLOW between: (A) STRENGTHEN
+  the R22 positive into a clean JEPA-distinctive win — eyes-on reacher reach render + a GOAL-IMAGE (pixel,
+  no reward/decoder) reach demo + harder task + cross-seed; vs (B) attack R19's DOWNSTREAM wall (make
+  sparse-reward control reliable: PER on reward transitions / separate explore-exploit buffers); vs (C)
+  a Review/milestone round (adversarially re-verify GROUNDLESS + R18 + R19-discovery + R22, tidy, report).
+  Lean (A) — builds on a real positive, most JEPA-distinctive (reward-free goal-image reaching).
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
-  flags: --pixels --masked-target --target-view --n-pred-heads --explore-objective --intrinsic-value.
+  flags: --pixels --masked-target --target-view --n-pred-heads --explore-objective --intrinsic-value;
+  objective='goal' + wm.quasimetric_head (off by default) + r21_goal_eval --quasimetric-head/--shuffle-goals.

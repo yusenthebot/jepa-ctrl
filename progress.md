@@ -629,10 +629,19 @@ head/--shuffle-goals red-flag control.
 - **Red-flag (shuffle) caveat:** L2 shuffled = 0.63/0.20 — still ≫ random (reacher geometry: states are
   ~mutually reachable), so the GOAL-CONDITIONAL gap (normal 0.47 vs shuffled 0.63; 6/20 vs 4/20) is
   WITHIN NOISE at n=20. Powered n=40 cross-checkpoint (R6 s0,s1) normal-vs-shuffled running to settle it.
-- **Takeaways:** (1) R21 goal-reaching negative was a TASK artifact (point_mass), not the method —
-  latent-L2 goal-MPPI works on reacher (correcting the record). (2) The quasimetric leap was UNNEEDED
-  and counterproductive. (3) Whether the goal-conditional effect is real (vs reacher geometry) pends the
-  powered run.
+- **POWERED n=40 cross-checkpoint (R6 s0,s1) — goal-conditional effect is REAL but MODEST:** NORMAL
+  ratio (s0 0.458, s1 0.453) consistently < SHUFFLED (s0 0.651, s1 0.704) on BOTH checkpoints; s1
+  success 0.425 vs shuffled 0.225. So the CORRECT goal helps beyond reacher geometry (genuine goal-
+  conditioning) — but shuffled still ≫ random (0.65-0.70 vs 1.29), so a large part of the reaching is
+  geometry, not goal-conditioning. Modest real positive.
+- **R22 VERDICT:** (1) the QUASIMETRIC (R22's bet) FAILED — worse than plain L2 for goal-MPPI (higher
+  global rho ≠ better planning gradient); characterized negative. (2) R21's goal-reaching negative was a
+  POINT_MASS degeneracy — reward-free latent-L2 goal-MPPI achieves REAL but MODEST goal-conditional
+  reaching on reacher (normal<shuffled<random cross-checkpoint). Net: bet failed, but corrected R21 +
+  a modest reward-free goal-reaching positive. Build reusable behind flags (QuasimetricHead off by
+  default, objective='goal', set_goal, harness --quasimetric-head/--shuffle-goals). suite green.
+  (Eyes-on render of a reach = strengthening follow-up; current REAL-VERIFY = real-sim true-state
+  distance + shuffle control cross-checkpoint, not a latent proxy.)
 
 ### Session arc (R18–R21) — two positives, two pivots-negative
 - R18 disagreement CALIBRATION: PASS (rho 0.91/0.95 cross-seed) — EMA-shared disagreement is calibrated.
