@@ -593,6 +593,20 @@ flags (--masked-target --target-view {masked,clean}); suite 139p; default off = 
 - **Pivot:** goal-image / reward-free latent GOAL-reaching (judge rank 2) — plan in latent space to a
   GOAL LATENT via latent-distance MPPI (no reward, no decoder); extends GROUNDLESS to goal-conditioned.
 
+### R21 (2026-06-21) — reward-free latent GOAL-REACHING (pivot after R20)
+Build (committed, suite green): MPPI objective='goal' (planner.set_goal(obs) → goal_z = encode(obs);
+_score_goal = −discounted latent-distance ‖z_h − z_g‖² along the rollout; NO reward/value/decoder) +
+goal-reaching eval harness (hindsight goals, real-sim set_state+plan+step, goal-MPPI vs random baseline).
+- **First eval (point_mass-easy, reward-free inverse-dynamics model): DIRECTIONAL but WEAK.** goal-MPPI
+  distance-ratio median 0.91 vs random 1.70 (40 steps); at 80 steps goal 1.04/1.22 vs random 2.16/1.42.
+  Goal-MPPI consistently BEATS random (latent geometry IS goal-meaningful) but 0% success (never
+  reaches within 33%) and worsens with more steps (pulls then overshoots, no stabilization).
+- **Confounds (being fixed):** (1) the point_mass model was UNSTABLE (final eval [634,747,~0],
+  collapsed); (2) hindsight goals carry arbitrary VELOCITY → matching them needs damping the objective
+  doesn't enforce. Next: re-eval with a HEALTHY (reward-grounded, goal-eval still reward-free) model;
+  if reaching works → R21 win (extends GROUNDLESS to goal-conditioned, JEPA-distinctive); if still
+  weak → latent-distance-goal is a characterized weak result → consider goal-IMAGE or pos-only goals.
+
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
 2. **Distractor robustness** (JEPA's killer app): JEPA-MPC stays in control under visual distractors
