@@ -28,12 +28,15 @@ decision: R19 CLOSED (discovery win, control negative). Decision Workflow (4 can
   consistency loss pressures latent(robot+distractor)->latent(robot-only) => online ignores
   distractor. STRUCTURALLY impossible in single-encoder recon/reward. Attacks R9's 82% collapse
   (clean 341 -> distractor 60, ratio 0.18) with an ARCHITECTURAL fix, not a tweak.
-next:     R20 BUILD (TDD, pure code — no GPU until hybrid_s3 frees): seg-mask robot pixels (dm_control
-  segmentation render), PixelReplayBuffer stores (obs_full, obs_masked) byte-budgeted, --masked-target
-  routes consistency target to encode_target(obs_masked). DE-RISK before the 24h campaign: (Step2)
-  eyes-on render masked frames — robot incl foot/ground-contact seam survives, bg cleanly zeroed;
-  (Step3) 1-seed ~61min canary read robustness ratio. KILL: clean-baseline regression OR ratio<0.50
-  cross-seed (=> seg too noisy, a publishable bound; pivot to goal-image-latent-control rank2).
+built:    R20 so far (pure code): mask_background (zero bg/keep robot) + 4 sim-free tests, pixel suite
+  21p; scripts/r20_mask_eyeson.py (Step-2 de-risk contact sheet). Both committed.
+next:     When GPU frees (b9d2vund1 = hybrid_s3 done): (Step2 DE-RISK) run r20_mask_eyeson.py + READ
+  the contact sheet — confirm robot incl foot/ground seam survives & bg cleanly zeroed. KILL if feet
+  zeroed (clean regression) or distractor leaks into masked col (no invariance). IF clean -> build the
+  wiring: PixelDMCEnv dual render (obs_full, obs_masked), PixelReplayBuffer dual-store byte-budgeted,
+  --masked-target routes consistency target to encode_target(obs_masked); then 1-seed ~61min canary
+  (robustness ratio vs R9 ref dist=60/0.18) before the full 18-run cross-seed campaign. IF mask dirty
+  -> RECORD the bound, pivot to goal-image-latent-control (judge rank 2).
 builds:   leg3 intrinsic-value Plan2Explore + leg4 hybrid objective committed, suite 133p. Knobs:
   --n-pred-heads 5 --explore-objective {reward|disagreement|hybrid} [--intrinsic-value].
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
