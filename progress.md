@@ -568,10 +568,18 @@ R9's standing negative (cheetah-run 64px: JEPA clean 341 → distractor 60, 82% 
   the online encoder to discard it. cheetah-run is the WRONG testbed: the masked region is task-relevant.
   Per the pre-registered kill, the distractor column is uninterpretable off a broken clean baseline →
   cheetah canary aborted.
-- **Next (discriminate the cause):** masked-JEPA vs standard-JEPA CLEAN on a BACKGROUND-IRRELEVANT task
-  (cartpole-balance: safe-learnable, bg irrelevant). If masked ≈ standard → ground-relevance confirmed,
-  masked-target viable (find a HARD bg-irrelevant task for the robustness gap). If masked << standard
-  there too → the cross-stream gap is a deeper flaw → pivot to goal-image-latent-control (judge rank 2).
+- **Diagnostic — masked(robot-on-black) is FUNDAMENTALLY broken (cross-seed of cause):** clean
+  cartpole-balance (bg-IRRELEVANT, 64px): standard = **993.7**, masked = **326.3** (plateaued
+  247→332→294→326). A 3× clean regression even where the masked region is irrelevant ⇒ NOT cheetah's
+  ground. Cause = **cross-stream input gap**: the EMA target encoder (an EMA of the online encoder,
+  which only ever sees full natural scenes) is fed robot-on-BLACK images it was never calibrated for ⇒
+  the consistency target is OOD/uncalibrated, impairing learning. ⇒ robot-on-black masking is dead.
+- **Pivot WITHIN the idea (clean-target variant):** target stream = the CLEAN render (online sees
+  distractor, target sees clean) — both full natural scenes (no OOD sparsity gap); clean-mode is
+  identity (no regression by construction). Reuses the dual-store infra. Test on the R9 benchmark
+  (cheetah-run distractor, standard 341→60). If clean-target distractor ≫ 60 → rung won; else → PIVOT
+  to goal-image-latent-control (judge rank 2). Note: clean-target is LESS recon-distinctive (a decoder
+  could denoise), so the recon arm must be run to quantify the gap if it works.
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.

@@ -40,6 +40,7 @@ class PixelDMCEnv:
         distractor: bool = False,
         distractor_seed: int | None = None,
         masked_target: bool = False,
+        target_view: str = "masked",
     ) -> None:
         domain, t = parse_task(task)
         self.task = task
@@ -48,9 +49,14 @@ class PixelDMCEnv:
         self.frame_stack = int(frame_stack)
         self._cam = int(camera_id)
         self.distractor = bool(distractor)
-        # R20: also maintain a parallel ROBOT-ONLY (background-zeroed) frame stack for the JEPA
-        # masked consistency target. masked_obs() returns the stacked robot-only obs.
+        # R20: also maintain a parallel TARGET frame stack for the JEPA consistency target.
+        # target_view="masked" -> robot-only (bg zeroed); "clean" -> the clean (pre-distractor)
+        # render. clean avoids the robot-on-black OOD gap that broke the masked variant. masked_obs()
+        # returns the stacked target obs (name kept for the trainer/buffer interface).
         self.masked_target = bool(masked_target)
+        if target_view not in ("masked", "clean"):
+            raise ValueError(f"target_view must be 'masked' or 'clean', got {target_view!r}")
+        self.target_view = target_view
         self._env = suite.load(domain, t, task_kwargs={"random": seed})
 
         aspec = self._env.action_spec()
@@ -85,8 +91,13 @@ class PixelDMCEnv:
             full = composite_distractor(clean, seg, self._distractor.frame(self._step_count))
         else:
             full = clean
-        masked = mask_background(clean, seg) if self.masked_target else None
-        return np.asarray(full, np.uint8), (None if masked is None else np.asarray(masked, np.uint8))
+        if not self.masked_target:
+            target = None
+        elif self.target_view == "clean":
+            target = clean  # online sees `full` (distractor); target sees the clean scene
+        else:
+            target = mask_background(clean, seg)  # robot-only
+        return np.asarray(full, np.uint8), (None if target is None else np.asarray(target, np.uint8))
 
     def _render_rgb(self) -> np.ndarray:
         """Back-compat: the full (possibly distracted) frame only."""
