@@ -643,6 +643,22 @@ head/--shuffle-goals red-flag control.
   (Eyes-on render of a reach = strengthening follow-up; current REAL-VERIFY = real-sim true-state
   distance + shuffle control cross-checkpoint, not a latent proxy.)
 
+### R24 (2026-06-21) — Direction-A de-risk: goal-reaching confound is INTRINSIC, not task-specific
+The R23 Review picked Direction A (reward-free goal-IMAGE reaching) but flagged R22's geometry confound
+(shuffled≈normal). Before a multi-hour pixel build, cheaply tested whether the confound is reacher-
+specific on a more DISCRIMINATIVE task: finger-turn_hard (active hinge manipulation — reaching a wrong
+spinner angle is genuinely different). Trained a healthy state model (return 628), goal-eval (n=40, pos
+metric, reward-free latent-L2 MPPI):
+- NORMAL 0.48/0.30 vs SHUFFLED 0.59/0.225 vs random 1.18/0.025. Same pattern as reacher: NORMAL <
+  SHUFFLED (real but MODEST goal-conditioning, gap ~0.11) ≪ random (geometry dominates).
+⇒ **The goal-reaching confound is INTRINSIC to latent-distance goal-MPPI** (consistent across point_mass-
+degenerate / reacher / finger): a real-but-small goal-conditional signal, swamped by task geometry
+(planning toward any goal-latent moves to a config near most goals). A pixel goal-image build would NOT
+fix a geometry confound → Direction A KILLED per its pre-registered criterion. The cheap state de-risk
+saved the pixel build. **Goal-reaching via plain latent-distance is a characterized MODEST/confounded
+capability for this JEPA — not a clean win.** FALL BACK to Direction C (deepen the verified GROUNDLESS
+reward-free CONTROL core — no goal-conditioning).
+
 ### R23 AUDIT (2026-06-21) — adversarial re-verification of R18–R22 claims (corrections, CANONICAL)
 A Review Workflow audited every session claim against on-disk run data. GROUNDLESS (496±31) and R22
 (quasimetric bet-failed / L2-modest) verified SOLID. Four claims were OVERCLAIMED — corrected here

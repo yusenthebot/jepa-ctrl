@@ -1,27 +1,26 @@
 # STATUS — main
-updated: 2026-06-21 · loop 23 (Review round)
+updated: 2026-06-21 · loop 24
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    run — R24 Direction-A DE-RISK: finger-turn_hard model training (discriminative goal task)
+phase:    decide — Direction A KILLED (goal-reaching confound intrinsic); pivot to Direction C
 owns:     whole repo (single session)
-state:    R23 Review Workflow adversarially audited R18-R22 vs on-disk data. SOLID: GROUNDLESS reward-
-  free control cheetah 496±31 (3 genuine training seeds, verified); R22 quasimetric bet-failed/L2-modest
-  (verified). CORRECTED OVERCLAIMS (see progress.md "R23 AUDIT", canonical): R18 NOT training-cross-seed
-  (one encoder, 2 data-collection seeds; heads near-identical cos=1.0); R19 "140-750x" only vs reward-
-  MPC's failed seed (avg reward-MPC wins; N=2); R19 pure-disagree 0/2 not 0/4; R20 cheetah-55 is
-  R20canary not R20ct. Corrections applied to progress.md + memory.
-verdict:  The one EXPERT-IMPRESSIVE verified win = GROUNDLESS reward-free control, but only shown for
-  LOCOMOTION; goal-reaching (R22) was geometry-confounded + used latent-L2 (not JEPA-distinctive).
-in_flight: R24 finger-turn_hard model training (runs/R24_finger_enc, --grounding reward state 100k,
-  ~1.5h) — the DE-RISK for Direction A: finger requires ACTIVE manipulation (spin hinge to target
-  angle) so reaching a WRONG goal is genuinely different -> shuffle control should separate (unlike
-  reacher's free-sweep geometry confound). goal-eval stays reward-free.
+state:    R23 audit corrected R18-R22 overclaims (canonical: progress.md "R23 AUDIT"). SOLID verified
+  positive = GROUNDLESS reward-free raw-latent consistency CONTROL (cheetah 496±31, 3 training seeds).
+  R24 de-risk KILLED Direction A: goal-reaching via latent-distance MPPI is INTRINSICALLY geometry-
+  confounded (point_mass/reacher/finger all: NORMAL<SHUFFLED real-but-modest, SHUFFLED≪random=geometry).
+  Pixel goal-image wouldn't fix a geometry confound. Goal-reaching = characterized modest/confounded.
+verdict:  After R18-R24, capability ADD-ONS (exploration-control, distractor, goal-reaching) are all
+  negative/modest. The ONE clean expert-impressive win is GROUNDLESS reward-free control, shown so far
+  mainly on 2D cheetah (+ a 3D-degrades boundary). Highest-value remaining = SOLIDIFY/BROADEN it.
+in_flight: NOTHING running. GPU free. All committed; suite green.
 blocked:  none
-next:     When finger model ready (waiter): run r21_goal_eval.py --task finger-turn_hard normal +
-  --shuffle-goals + (random via harness), n=40, position metric. CONFOUND-FIX GATE: normal << shuffled
-  (gap > noise) AND shuffled not >> random. IF clean separation => goal-reaching capability VALIDATED
-  (R22 confound was reacher-specific) => proceed to the FULL Direction A pixel GOAL-IMAGE build
-  (--pixels, encode goal image -> z_goal, latent-dist MPPI, eyes-on, 3-seed). IF shuffled≈normal again
-  => goal-reaching is fundamentally confounded for this method => fall back to Direction C (deepen the
-  verified GROUNDLESS locomotion core, no goal-conditioning).
+next:     DIRECTION C (cold start) = deepen/broaden GROUNDLESS reward-free control. First experiment:
+  reward-free (raw-latent consistency-only, latent_norm=none — see R07 recipe runs/R07_groundless_*) vs
+  reward-grounded on 2-3 NEW 2D dm_control tasks (walker-walk, ball_in_cup-catch, reacher-easy), 2 seeds
+  each, ~30min/run serialized. CLAIM to test: reward-free raw-latent consistency control is broadly
+  competitive in 2D (not cheetah-specific). REAL-VERIFY: return cross-seed + eyes-on a rollout per task;
+  RED-TEAM (reward-free vs reward-grounded gap, per-seed). If reward-free competitive across tasks =>
+  GROUNDLESS broadly validated (solid citable win). If it degrades per-task => map the 2D boundary.
+  ORIENT first: confirm exact GROUNDLESS train flags from R07 (grounding/latent-norm) before launching.
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
-  pixel goal-eval needs a pixel goal-image path in r21_goal_eval (currently state obs) — add in the build.
+  models on disk: cheetah (R03/R07), reacher-easy (R06 s0-2), finger-turn_hard (R24), cartpole (R18),
+  point_mass (R21). goal objective + QuasimetricHead + r21_goal_eval remain (off by default).
