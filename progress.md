@@ -643,12 +643,34 @@ head/--shuffle-goals red-flag control.
   (Eyes-on render of a reach = strengthening follow-up; current REAL-VERIFY = real-sim true-state
   distance + shuffle control cross-checkpoint, not a latent proxy.)
 
-### Session arc (R18–R21) — two positives, two pivots-negative
-- R18 disagreement CALIBRATION: PASS (rho 0.91/0.95 cross-seed) — EMA-shared disagreement is calibrated.
-- R19 disagreement EXPLORATION: discovery WIN (140–750×, iv>myopic) but control NEGATIVE (wall = downstream).
-- R20 masked-target distractor robustness: NEGATIVE (cross-stream OOD; clean-target ratio 0.23≈standard).
-- R21 latent-distance goal-reaching: NEGATIVE (control-trained latent isn't a goal metric, rho 0.23).
-Real positives this arc = R18 calibration + R19 discovery (both clean sub-results). The recurring lesson:
+### R23 AUDIT (2026-06-21) — adversarial re-verification of R18–R22 claims (corrections, CANONICAL)
+A Review Workflow audited every session claim against on-disk run data. GROUNDLESS (496±31) and R22
+(quasimetric bet-failed / L2-modest) verified SOLID. Four claims were OVERCLAIMED — corrected here
+(these supersede looser wording above):
+- **R18 "cross-seed PASS" → NOT cross-seed.** rho 0.91/0.95 are correct but both calib runs share ONE
+  encoder (runs/R18_calib/cartpole_enc/model.pt); --seed varied only the calibration data-collection
+  RNG, NOT JEPA training (r18_run.sh L13-24; no training in run_seed1.log). So the R14/R17 trap
+  (training stochasticity) was NOT exercised. Also pairwise_head_cosine=1.0000 (heads near-identical,
+  violates the script's own <0.99 warning) ⇒ disagreement is a structured ~1e-5 residual. HONEST R18:
+  "on ONE encoder, disagreement rho≈0.9 across 2 data-collection seeds; not training-cross-seed; heads
+  barely distinct."
+- **R19 "140–750× more than reward-MPC" → cherry-picks reward-MPC's worst seed.** reward_hits: iv
+  751/583, myopic 149/76, reward 1/7299. The 140-750× holds only vs reward_s0=1; reward_s1=7299
+  (exploitation-inflated post-success) exceeds all disagreement arms; averaged reward-MPC(3650)>iv(667).
+  N=2 unstable. HONEST: "on the seed reward-MPC fails to discover, disagreement discovers ~100-750×
+  more; iv reliably > myopic ~4-8×; but it's not a blanket discovery win."
+- **R19 "pure-disagreement 0/4" → 0/2.** R19L4 has only hybrid+reward (no pure-disagree). Pure-disagree
+  control is 0/2 from R19L3. hybrid 0/4 and reward-MPC 1/4 are correct.
+- **R20 file attribution:** cheetah-55 (masked robot-on-black) is runs/R20canary_cheetah_run/clean, NOT
+  R20ct. R20ct_cheetah_distractor=77.5 is the clean-target arm (ratio 0.23). Findings stand; paths fixed.
+
+### Session arc (R18–R22) — see R23 AUDIT above for corrected claims
+- R18 disagreement CALIBRATION: rho≈0.9 on ONE encoder / 2 data-collection seeds (NOT training-cross-seed; heads near-identical).
+- R19 disagreement EXPLORATION: discovery win ON reward-MPC's failed seed (not blanket; iv>myopic ~4-8×); control NEGATIVE.
+- R20 masked-target distractor robustness: NEGATIVE (masked OOD clean-kill; clean-target ratio 0.23≈standard).
+- R21 latent-distance goal-reaching: NEGATIVE *but point_mass-degenerate* (corrected by R22 — reacher L2 rho 0.66).
+- R22 quasimetric: BET FAILED (worse than L2); L2 goal-MPPI real-but-modest goal-conditional reaching on reacher.
+Real SOLID positive = GROUNDLESS reward-free control (496±31, fully verified). The recurring lesson:
 capabilities (control, robustness, goal-reaching) do NOT come free from a consistency-trained JEPA latent
 — each needs its own structural pressure. Next frontier candidate: a goal-METRIC latent (quasimetric).
 
