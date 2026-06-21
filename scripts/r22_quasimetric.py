@@ -29,7 +29,7 @@ def load_encoder(ckpt, obs_dim, act_dim, device):
     sd = torch.load(ckpt, map_location=device)
     ld = sd["encoder.proj.weight"].shape[0]
     wm = WorldModel(ModelConfig(obs_dim=obs_dim, act_dim=act_dim, latent_dim=ld)).to(device)
-    wm.load_state_dict(sd)
+    wm.load_state_dict(sd, strict=False)  # old R6 ckpt predates disag_scale/inverse_dynamics_head
     wm.eval()
     for p in wm.parameters():
         p.requires_grad_(False)

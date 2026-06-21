@@ -29,7 +29,7 @@ def load_wm(ckpt: str, obs_dim: int, act_dim: int, device: str) -> WorldModel:
     ld = sd["encoder.proj.weight"].shape[0]  # infer latent_dim from the encoder projection
     cfg = ModelConfig(obs_dim=obs_dim, act_dim=act_dim, latent_dim=ld)  # simnorm default
     wm = WorldModel(cfg).to(device)
-    wm.load_state_dict(sd)
+    wm.load_state_dict(sd, strict=False)  # tolerate older ckpts (pre disag_scale/inverse_dynamics)
     wm.eval()
     return wm
 
