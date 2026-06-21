@@ -12,7 +12,8 @@ ROOT="runs/R20canary_cheetah_run"
 mkdir -p "$ROOT"
 
 run() {  # tag  extra
-  local tag="$1" extra="$2" out="$ROOT/$tag"
+  local tag="$1" extra="$2"
+  local out="$ROOT/$tag"
   if [ -f "$out/result.json" ]; then echo "[canary] SKIP $out"; return; fi
   echo "[canary] === $out ($extra) ==="
   $PY scripts/train.py --task cheetah-run --pixels --masked-target --size 64 \
