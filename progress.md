@@ -574,12 +574,24 @@ R9's standing negative (cheetah-run 64px: JEPA clean 341 → distractor 60, 82% 
   ground. Cause = **cross-stream input gap**: the EMA target encoder (an EMA of the online encoder,
   which only ever sees full natural scenes) is fed robot-on-BLACK images it was never calibrated for ⇒
   the consistency target is OOD/uncalibrated, impairing learning. ⇒ robot-on-black masking is dead.
-- **Pivot WITHIN the idea (clean-target variant):** target stream = the CLEAN render (online sees
-  distractor, target sees clean) — both full natural scenes (no OOD sparsity gap); clean-mode is
-  identity (no regression by construction). Reuses the dual-store infra. Test on the R9 benchmark
-  (cheetah-run distractor, standard 341→60). If clean-target distractor ≫ 60 → rung won; else → PIVOT
-  to goal-image-latent-control (judge rank 2). Note: clean-target is LESS recon-distinctive (a decoder
-  could denoise), so the recon arm must be run to quantify the gap if it works.
+- **clean-target variant (target = clean render, online = distractor): FAILS the gate.** cheetah-run
+  distractor clean-target = **77.5** (noisy 34–81, seed0). vs R9 standard clean 341 / distractor 60:
+  ratio 77/341 = **0.23** ≈ standard's 0.18, ≪ the pre-reg 0.50/150 gate. No clean regression (clean-
+  mode = identity, by construction) but the cross-stream invariance pressure is TOO WEAK to overcome
+  the distractor on hard cheetah pixel-control.
+
+### R20 VERDICT (2026-06-21) — masked/two-stream-asymmetry distractor robustness = NEGATIVE
+Two honest variants on the R9 benchmark (cheetah-run 64px distractor; standard clean 341 / dist 60):
+- masked (robot-on-black target): clean-KILL (55 cheetah / 326 cartpole) — EMA target encoder OOD on
+  the robot-on-black input (cross-stream sparsity gap). Dead.
+- clean-target (clean-scene target): no regression but dist 77, ratio 0.23 ≈ standard 0.18 — no
+  meaningful robustness. Dead.
+⇒ Giving the JEPA EMA target a different VIEW does not confer distractor robustness here. R9's "JEPA
+consistency alone isn't distractor-robust" stands; targeted-view asymmetry doesn't fix it (either OOD-
+breaks learning, or the pressure is too weak). Rung characterized + closed. Build reusable behind
+flags (--masked-target --target-view {masked,clean}); suite 139p; default off = byte-identical.
+- **Pivot:** goal-image / reward-free latent GOAL-reaching (judge rank 2) — plan in latent space to a
+  GOAL LATENT via latent-distance MPPI (no reward, no decoder); extends GROUNDLESS to goal-conditioned.
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
