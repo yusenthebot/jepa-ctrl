@@ -1,43 +1,26 @@
 # STATUS — main
-updated: 2026-06-20 · loop 19
+updated: 2026-06-21 · loop 20
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
-phase:    build — R20 masked-target distractor robustness (R19 closed; Decision Workflow picked it)
+phase:    run — R20 masked-target CANARY live; build DONE + suite 139p + smoke verified
 owns:     whole repo (single session)
-state:    R18 disagreement calibration cross-seed PASS (EMA-shared disagreement IS calibrated).
-  R19 = reward-free disagreement EXPLORATION (Plan2Explore). leg1 ball_in_cup: A 959≈B 956 (both
-  solve, easy control). leg2 cartpole-swingup_sparse: disagreement 0/2 vs reward 1/2 CONTROL (honest
-  negative); eyes-on reward_s1=GENUINE swing-up (method capable). leg3 3-arm grid (s0): reward_hits
-  1 / 149 / 751 (reward/myopic/iv) = disagreement out-DISCOVERS reward-MPC ~140-750x, iv>myopic;
-  BUT all 0 zero-shot return => discovery != control (transient novelty vs dwell-and-hold; reward_s1
-  held upright 7299 steps -> 278). Bottleneck DOWNSTREAM, not exploration.
-  leg3 FINAL grid (ret/hits): reward{0/1, 278/7299} myopic{0/149, 0/76} iv{0/751, 0/583}. iv>myopic
-  cross-seed on discovery; control reward 1/2, disagreement 0/4. discovery!=control (recorded).
-in_flight: R19 leg4 (scripts/r19_leg4.sh cartpole-swingup_sparse 100k seeds 0-3). 8 runs SERIALIZED
-  (~6h): per seed reward -> hybrid. log runs/R19L4_campaign.log. waiter b9d2vund1.
-PRELIM:   leg4 so far: reward{s0 0, s1 278, s2 0} hybrid{s0 0/296h, s1 0/3321h}. HYBRID IS FAILING:
-  0/2, and LOST s1 that reward WON (278). hybrid_s1 had 3321 reward-hits yet ret 0 => even lots of
-  reward exposure doesn't convert. Likely the explore phase DILUTES the shared buffer with off-task
-  data so the exploit phase learns a noisier reward/value than pure reward-MPC (which concentrates its
-  whole buffer on swing-up once it discovers). => R19 control axis = NEGATIVE: disagreement exploration
-  (pure or hybrid) does NOT improve & hybrid HARMS zero-shot control. Wall = downstream grounding/H3
-  planning, not exploration. Await s2(hybrid)/s3 then full RECORD + Decision Workflow for next rung.
+state:    R18 disagreement calibration cross-seed PASS. R19 (disagreement EXPLORATION) CLOSED: a
+  DISCOVERY win (disagreement out-discovers reward-MPC 140-750x, intrinsic-value>myopic cross-seed)
+  but a CONTROL negative (cartpole-swingup_sparse: pure-disagree 0/4, hybrid 0/4 WORSE via buffer
+  dilution, reward-MPC 1/4). Wall = downstream reward-grounding/H3-planning, not exploration. Decision
+  Workflow (4 cand + Opus judge) -> R20 = DISTRACTOR ROBUSTNESS via JEPA MASKED-TARGET STREAM.
+r20:      Feed EMA TARGET encoder a robot-only (bg-zeroed) image while online encoder+planner see the
+  FULL distractor obs; consistency pressures latent(robot+distractor)->latent(robot-only) => online
+  ignores bg. STRUCTURALLY impossible for single-encoder recon/reward. Attacks R9's 82% collapse
+  (clean 341 -> distractor 60, ratio 0.18) architecturally. Step-2 eyes-on PASS (mask clean: legs+feet
+  kept, distractor 100% zeroed). Build DONE: mask_background, PixelDMCEnv dual-render+masked_obs(),
+  PixelReplayBuffer dual-store byte-budgeted, consistency_loss_from(target_obs_seq), trainer +
+  train.py --masked-target. Suite 139p, smoke ETA 72min/100k.
+in_flight: R20 CANARY (scripts/r20_canary.sh): masked-JEPA cheetah-run 64x64 seed0, clean->distractor,
+  100k each (~2.4h). log runs/R20canary_campaign.log.
 blocked:  none
-decision: R19 CLOSED (discovery win, control negative). Decision Workflow (4 cand + Opus judge) ->
-  R20 = DISTRACTOR ROBUSTNESS via JEPA MASKED-TARGET STREAM. Idea: feed EMA TARGET encoder a
-  background-zeroed (robot-only) image while online encoder + planner see FULL distractor obs;
-  consistency loss pressures latent(robot+distractor)->latent(robot-only) => online ignores
-  distractor. STRUCTURALLY impossible in single-encoder recon/reward. Attacks R9's 82% collapse
-  (clean 341 -> distractor 60, ratio 0.18) with an ARCHITECTURAL fix, not a tweak.
-DERISK:   Step-2 eyes-on PASS (runs/R20_mask_eyeson.png, cheetah-run 64x64): masked target keeps the
-  cheetah incl LEGS+FEET (no clean-regression kill), bg+distractor 100% zeroed (no invariance-leak
-  kill), robot_px ~17% stable. Mask cleanly separates robot/bg => proceed to wiring.
-built:    mask_background + 4 tests; r20_mask_eyeson.py. committed.
-next:     R20 WIRING build (TDD, mostly sim-free): (1) PixelDMCEnv dual render -> (obs_full distractor,
-  obs_masked robot-only) from one clean render+seg; (2) PixelReplayBuffer dual-store byte-budgeted
-  (halve cap for 2x); (3) WorldModel consistency target -> encode_target(obs_masked) under
-  --masked-target while online rollout encodes obs_full; (4) train.py --masked-target. Then 1-seed
-  ~61min CANARY (masked-JEPA clean+distractor) read robustness ratio vs R9 ref (dist 60/ratio 0.18)
-  before the full 18-run cross-seed campaign. Pre-reg success: masked dist>=150 & ratio>=0.50 cross-seed.
-builds:   leg3 intrinsic-value Plan2Explore + leg4 hybrid objective committed, suite 133p. Knobs:
-  --n-pred-heads 5 --explore-objective {reward|disagreement|hybrid} [--intrinsic-value].
+next:     When canary done (waiter): ratio = distractor_return/clean_return. Pre-reg fan-out gate:
+  masked dist >= 150 AND ratio >= 0.50 (vs R9 standard-JEPA dist 60 / ratio 0.18). EYES-ON a distractor
+  rollout. IF promising -> full 18-run cross-seed campaign (3 arms standard/masked/recon x clean/dist x
+  3 seeds) RED-TEAMed. IF canary clean-return regresses or ratio<0.50 -> RECORD the bound, pivot to
+  goal-image-latent-control (judge rank 2). knobs: --pixels --masked-target [--distractor] --size 64.
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
