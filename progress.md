@@ -613,6 +613,27 @@ goal-reaching eval harness (hindsight goals, real-sim set_state+plan+step, goal-
   metric (quasimetric / temporal-distance / contrastive goal latent) — a real direction, not a tweak.
   Build reusable behind flags (objective='goal', set_goal, harness); suite green.
 
+### R22 (2026-06-21) — quasimetric goal-metric: BET FAILED, but corrects R21
+Design Workflow (3 formulations + Opus judge) → IQE QUASIMETRIC head (frozen encoder; d=sum relu(v(g)−
+v(s)), triangle by construction). Built: nets QuasimetricHead + WorldModel attachable slot + MPPI goal
+uses it + 2 axiom tests; r22_quasimetric.py (collect+train head+rho gate) + r21_goal_eval --quasimetric-
+head/--shuffle-goals red-flag control.
+- **RHO PRE-CHECK (reacher-easy R6) overturned R21's premise:** quasimetric rho=0.70 vs **latent-L2
+  rho=0.66 — BOTH decent.** R21's rho=0.23 was a POINT_MASS DEGENERACY (qpos span ~0.03, point barely
+  moves), NOT a general JEPA-latent flaw. On a healthy task (reacher qpos span 14.9×5.9) the latent is
+  already a reasonable goal metric.
+- **Goal-eval (reacher-easy, position metric, n=20):** L2 ratio **0.47** / success **0.30** (BEATS
+  random 1.71/0.0 — reward-free latent-L2 goal-MPPI partially REACHES). IQE quasimetric ratio 2.24 /
+  0.10 (drifts away, ≈ its own shuffled control) — **the quasimetric HURTS**: marginally-higher global
+  rho but a worse MPPI gradient. **R22's actual bet (quasimetric) FAILED; plain L2 is better.**
+- **Red-flag (shuffle) caveat:** L2 shuffled = 0.63/0.20 — still ≫ random (reacher geometry: states are
+  ~mutually reachable), so the GOAL-CONDITIONAL gap (normal 0.47 vs shuffled 0.63; 6/20 vs 4/20) is
+  WITHIN NOISE at n=20. Powered n=40 cross-checkpoint (R6 s0,s1) normal-vs-shuffled running to settle it.
+- **Takeaways:** (1) R21 goal-reaching negative was a TASK artifact (point_mass), not the method —
+  latent-L2 goal-MPPI works on reacher (correcting the record). (2) The quasimetric leap was UNNEEDED
+  and counterproductive. (3) Whether the goal-conditional effect is real (vs reacher geometry) pends the
+  powered run.
+
 ### Session arc (R18–R21) — two positives, two pivots-negative
 - R18 disagreement CALIBRATION: PASS (rho 0.91/0.95 cross-seed) — EMA-shared disagreement is calibrated.
 - R19 disagreement EXPLORATION: discovery WIN (140–750×, iv>myopic) but control NEGATIVE (wall = downstream).

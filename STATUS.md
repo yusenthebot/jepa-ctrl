@@ -15,14 +15,18 @@ r22:      Design Workflow -> IQE QUASIMETRIC head (frozen encoder; d=sum relu(v(
   construction). Built (nets QuasimetricHead + WorldModel attachable slot + MPPI goal uses it + 2 tests).
   RHO PRE-CHECK (reacher-easy R6): quasimetric 0.70 vs latent-L2 0.66 BOTH decent => R21 rho=0.23 was
   POINT_MASS DEGENERACY (qpos span 0.03), not a latent flaw; reacher latent is already ~goal-metric.
-in_flight: R22 3-arm goal-eval (/tmp/r22_goaleval.sh -> runs/R22_goaleval.log): iqe vs l2 vs
-  iqe_shuffled(red-flag) on reacher-easy, position metric, ~30min.
+result:   goal-eval reacher-easy (pos metric, n=20): L2 0.47/0.30 BEATS random 1.71/0.0 (latent-L2
+  goal-MPPI partially REACHES — R21 negative was point_mass-degenerate). IQE quasimetric 2.24/0.10
+  (WORSE, ~=its shuffle) — R22's bet FAILED, L2 better. L2 shuffled 0.63/0.20 still >>random => goal-
+  conditional gap within noise at n=20 (reacher geometry).
+in_flight: R22 POWERED (/tmp/r22_powered.sh -> runs/R22_powered.log): L2 normal-vs-shuffled n=40 on R6
+  s0,s1 (~45min) to settle if the goal-conditional effect is real vs reacher geometry.
 blocked:  none
-next:     When goal-eval done (waiter): compare iqe vs l2 vs random pos_success_rate + pos_ratio. KEY
-  question (since L2 rho already 0.66 on reacher): does EITHER reach goals (pos_success>0, ratio<<random)
-  on reacher, and does IQE beat L2? iqe_shuffled MUST collapse to ~random (else harness bogus). IF reach
-  works -> reward-free goal-reaching WIN (was a point_mass-task artifact, not a method failure) ->
-  cross-seed (R6 s1,s2) + eyes-on + maybe harder task. IF neither reaches despite rho~0.7 -> the metric
-  is monotone but too flat/noisy for MPPI -> diagnose planner (horizon/iters) or RECORD bounded.
+next:     When powered done (waiter): if L2 NORMAL consistently < SHUFFLED across s0,s1 at n=40 (gap
+  beyond noise) => real reward-free goal-conditional reaching on reacher (modest WIN, corrects R21) ->
+  eyes-on a rollout render + RECORD; quasimetric = characterized negative (worse than L2). If normal≈
+  shuffled => "reaching" is mostly reacher geometry, not goal-conditioning => HONEST near-negative; the
+  goal-reaching capability isn't really there -> consolidate R22 (quasimetric failed + L2-modest) and
+  Decision Workflow for the next rung (judge #3 downstream-grounding-fix, or deepen GROUNDLESS).
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
   flags: --pixels --masked-target --target-view --n-pred-heads --explore-objective --intrinsic-value.
