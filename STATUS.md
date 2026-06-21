@@ -28,15 +28,16 @@ decision: R19 CLOSED (discovery win, control negative). Decision Workflow (4 can
   consistency loss pressures latent(robot+distractor)->latent(robot-only) => online ignores
   distractor. STRUCTURALLY impossible in single-encoder recon/reward. Attacks R9's 82% collapse
   (clean 341 -> distractor 60, ratio 0.18) with an ARCHITECTURAL fix, not a tweak.
-built:    R20 so far (pure code): mask_background (zero bg/keep robot) + 4 sim-free tests, pixel suite
-  21p; scripts/r20_mask_eyeson.py (Step-2 de-risk contact sheet). Both committed.
-next:     When GPU frees (b9d2vund1 = hybrid_s3 done): (Step2 DE-RISK) run r20_mask_eyeson.py + READ
-  the contact sheet — confirm robot incl foot/ground seam survives & bg cleanly zeroed. KILL if feet
-  zeroed (clean regression) or distractor leaks into masked col (no invariance). IF clean -> build the
-  wiring: PixelDMCEnv dual render (obs_full, obs_masked), PixelReplayBuffer dual-store byte-budgeted,
-  --masked-target routes consistency target to encode_target(obs_masked); then 1-seed ~61min canary
-  (robustness ratio vs R9 ref dist=60/0.18) before the full 18-run cross-seed campaign. IF mask dirty
-  -> RECORD the bound, pivot to goal-image-latent-control (judge rank 2).
+DERISK:   Step-2 eyes-on PASS (runs/R20_mask_eyeson.png, cheetah-run 64x64): masked target keeps the
+  cheetah incl LEGS+FEET (no clean-regression kill), bg+distractor 100% zeroed (no invariance-leak
+  kill), robot_px ~17% stable. Mask cleanly separates robot/bg => proceed to wiring.
+built:    mask_background + 4 tests; r20_mask_eyeson.py. committed.
+next:     R20 WIRING build (TDD, mostly sim-free): (1) PixelDMCEnv dual render -> (obs_full distractor,
+  obs_masked robot-only) from one clean render+seg; (2) PixelReplayBuffer dual-store byte-budgeted
+  (halve cap for 2x); (3) WorldModel consistency target -> encode_target(obs_masked) under
+  --masked-target while online rollout encodes obs_full; (4) train.py --masked-target. Then 1-seed
+  ~61min CANARY (masked-JEPA clean+distractor) read robustness ratio vs R9 ref (dist 60/ratio 0.18)
+  before the full 18-run cross-seed campaign. Pre-reg success: masked dist>=150 & ratio>=0.50 cross-seed.
 builds:   leg3 intrinsic-value Plan2Explore + leg4 hybrid objective committed, suite 133p. Knobs:
   --n-pred-heads 5 --explore-objective {reward|disagreement|hybrid} [--intrinsic-value].
 notes:    PIN mujoco==3.8.1. torch cu128. MUJOCO_GL=egl. PYTHONPATH=repo-root. flock serializes trainings.
