@@ -601,11 +601,26 @@ goal-reaching eval harness (hindsight goals, real-sim set_state+plan+step, goal-
   distance-ratio median 0.91 vs random 1.70 (40 steps); at 80 steps goal 1.04/1.22 vs random 2.16/1.42.
   Goal-MPPI consistently BEATS random (latent geometry IS goal-meaningful) but 0% success (never
   reaches within 33%) and worsens with more steps (pulls then overshoots, no stabilization).
-- **Confounds (being fixed):** (1) the point_mass model was UNSTABLE (final eval [634,747,~0],
-  collapsed); (2) hindsight goals carry arbitrary VELOCITY → matching them needs damping the objective
-  doesn't enforce. Next: re-eval with a HEALTHY (reward-grounded, goal-eval still reward-free) model;
-  if reaching works → R21 win (extends GROUNDLESS to goal-conditioned, JEPA-distinctive); if still
-  weak → latent-distance-goal is a characterized weak result → consider goal-IMAGE or pos-only goals.
+- **HEALTHY model re-eval (854.6, stable) + position-only metric → NEGATIVE.** full-state goal ratio
+  0.94 vs random 1.60 LOOKED directional, but POSITION-only ratio = 1.72 (drifts 72% FARTHER) vs random
+  2.07, 0% position success. The full-state "signal" was VELOCITY-matching, not spatial reaching.
+- **Root cause (Debug-Protocol diagnostics):** (1) latent-MSE vs true position-distance Spearman
+  **rho=0.23** — the control-trained SimNorm latent is NOT a goal-distance metric, so latent-distance
+  MPPI has no spatial gradient to follow. (2) point_mass position range over 200 random steps ~0.03
+  (point barely moves) — the random-exploration hindsight-goal testbed is partly degenerate too.
+- **R21 VERDICT: NEGATIVE.** Naive latent-distance goal-MPPI on a control-trained JEPA does not reach
+  (latent isn't a goal metric). The DIAGNOSED FIX is a leap in kind: train the latent to BE a goal
+  metric (quasimetric / temporal-distance / contrastive goal latent) — a real direction, not a tweak.
+  Build reusable behind flags (objective='goal', set_goal, harness); suite green.
+
+### Session arc (R18–R21) — two positives, two pivots-negative
+- R18 disagreement CALIBRATION: PASS (rho 0.91/0.95 cross-seed) — EMA-shared disagreement is calibrated.
+- R19 disagreement EXPLORATION: discovery WIN (140–750×, iv>myopic) but control NEGATIVE (wall = downstream).
+- R20 masked-target distractor robustness: NEGATIVE (cross-stream OOD; clean-target ratio 0.23≈standard).
+- R21 latent-distance goal-reaching: NEGATIVE (control-trained latent isn't a goal metric, rho 0.23).
+Real positives this arc = R18 calibration + R19 discovery (both clean sub-results). The recurring lesson:
+capabilities (control, robustness, goal-reaching) do NOT come free from a consistency-trained JEPA latent
+— each needs its own structural pressure. Next frontier candidate: a goal-METRIC latent (quasimetric).
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
