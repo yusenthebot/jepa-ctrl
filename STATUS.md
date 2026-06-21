@@ -14,11 +14,13 @@ state:    R18 disagreement calibration cross-seed PASS (EMA-shared disagreement 
   cross-seed on discovery; control reward 1/2, disagreement 0/4. discovery!=control (recorded).
 in_flight: R19 leg4 (scripts/r19_leg4.sh cartpole-swingup_sparse 100k seeds 0-3). 8 runs SERIALIZED
   (~6h): per seed reward -> hybrid. log runs/R19L4_campaign.log. waiter b9d2vund1.
-PRELIM:   reward_s0=0/1hit, hybrid_s0=0/296hits. Hybrid explore-phase DISCOVERED reward (296 vs 1)
-  but exploit-phase did NOT convert (final 0). CONCERN: bottleneck may be downstream (reward-head
-  can't learn HOLD from transient sparse hits; once beta=0 it's reward-MPC again) not exploration
-  coverage. Need cross-seed (s1-s3) before concluding hybrid fails. If hybrid ~reward => R19 = bounded
-  negative (exploration solved, exploitation/grounding is the wall) -> attack downstream or pivot rung.
+PRELIM:   leg4 so far: reward{s0 0, s1 278, s2 0} hybrid{s0 0/296h, s1 0/3321h}. HYBRID IS FAILING:
+  0/2, and LOST s1 that reward WON (278). hybrid_s1 had 3321 reward-hits yet ret 0 => even lots of
+  reward exposure doesn't convert. Likely the explore phase DILUTES the shared buffer with off-task
+  data so the exploit phase learns a noisier reward/value than pure reward-MPC (which concentrates its
+  whole buffer on swing-up once it discovers). => R19 control axis = NEGATIVE: disagreement exploration
+  (pure or hybrid) does NOT improve & hybrid HARMS zero-shot control. Wall = downstream grounding/H3
+  planning, not exploration. Await s2(hybrid)/s3 then full RECORD + Decision Workflow for next rung.
 blocked:  none
 next:     When leg4 done (waiter): RELIABILITY headline — does HYBRID swing up on MORE seeds than
   reward-MPC (target hybrid >> reward-MPC's ~1-2/4)? Compare per-seed return + reward_hits; RED-TEAM
