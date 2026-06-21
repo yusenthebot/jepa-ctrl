@@ -519,11 +519,36 @@ Claim under test: as task exploration-difficulty rises, the A−B gap WIDENS (B 
     learn). The disagreement arms found upright as TRANSIENT novelty (583–751 pass-throughs) and moved
     on, never dwelling ⇒ the reward head learns a weak signal, zero-shot planner can't stabilize.
     **Discovery ≠ exploitation-coherent data.** This is the new bottleneck (downstream of exploration).
-- **Leg 4 — HYBRID explore-then-exploit (reward vs hybrid, 4 seeds): RUNNING.** Hybrid = extrinsic +
-  annealed-beta intrinsic (beta 1→0): explore early so EVERY seed discovers the reward (reward_s0
-  never did), exploit late so it dwells/holds. Tests the RELIABILITY headline: hybrid swing-up on
-  more seeds than reward-MPC's 1/2. Built + committed (suite 133p).
-- **Leg 5 — acrobot-swingup_sparse (hard stretch): after the cartpole mechanism is settled.**
+- **Leg 4 — HYBRID explore-then-exploit (reward vs hybrid, 4 seeds), DONE — HYBRID WORSE.** Grid
+  (final return): reward {s0 0, s1 278, s2 0, s3 0} = **1/4**; hybrid {s0 0, s1 0, s2 0, s3 ~0} =
+  **0/4**. Hybrid did NOT improve reliability and HARMED it — it LOST s1 (which pure reward-MPC
+  solves) despite 3321 reward-hits. Mechanism: the disagreement explore-phase DILUTES the shared
+  replay buffer with off-task data, so the late exploit-phase learns a noisier reward/value than pure
+  reward-MPC (which, once it luckily discovers reward, concentrates its whole buffer on coherent
+  swing-up trajectories). Discovery exposure (3321 hits) ≠ a learnable swing-up policy.
+
+### R19 SUMMARY (2026-06-21) — disagreement exploration: discovery WIN, control NEGATIVE
+Thorough cross-seed test of reward-free latent-disagreement exploration (Plan2Explore family) for
+sparse-task control, laptop-scale JEPA-MPPI:
+- **POSITIVE (exploration/discovery, cross-seed):** disagreement-MPC discovers sparse reward
+  **140–750× more** than reward-MPC on the seeds reward-MPC misses (reward_hits 1 → 149/76 myopic →
+  751/583 iv); **intrinsic-value (long-horizon) reliably beats myopic** (~4–8×). R18 calibration +
+  R19 discovery together = the disagreement signal is real, calibrated, and steers exploration.
+- **NEGATIVE (zero-shot control):** none of it converts on cartpole-swingup_sparse — pure
+  disagreement **0/4**, hybrid **0/4** (worse, buffer dilution), reward-MPC **1/4**. The method CAN
+  swing up (eyes-on reward_s1=278 genuine), so the wall is **downstream**: the reward head + horizon-3
+  value-bootstrapped planner can't turn transient sparse-reward discoveries into a dwell-and-hold
+  policy. **Discovery ≠ exploitation-coherent data.**
+- **Honest bottom line:** intrinsic exploration solves the *finding* problem it targets, but sparse
+  *control* is gated by reward-grounding/planning, which this rung doesn't touch. The clean leverage
+  is NOT more exploration. Ladder rung 3 = characterized + closed.
+- **Builds (kept, reusable):** PredictorEnsemble + disagreement, intrinsic value head + long-horizon
+  bootstrap, hybrid objective, reward_hits instrument — all behind flags (n_pred_heads=1 default =
+  byte-identical prior runs). Suite 133p.
+- **Next:** Decision Workflow to pick the next rung (attack the downstream sparse-grounding wall vs
+  pivot to a cleaner JEPA-distinctive win: distractor-robustness / pixels / temporal-abstraction).
+- **Leg 5 — acrobot-swingup_sparse (hard stretch): SHELVED** (cartpole already shows the wall is
+  downstream; a harder task won't change that diagnosis).
 
 ### Frontier ladder (escalation in KIND — the new spine)
 1. **GROUNDLESS** (DONE): reward-free raw-latent control 496±31, red-teamed + attributed.
