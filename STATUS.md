@@ -1,5 +1,5 @@
 # STATUS — main
-updated: 2026-06-21 · loop 24
+updated: 2026-06-23 · loop 25 (resumed after ~2d dormant; GitHub pushed @ e1d02af)
 goal:     laptop-scale action-conditioned JEPA latent world model + latent MPPI; FRONTIER MODE; ALL-SIM (NO sim2real) — dm_control only
 phase:    run — R25 Direction-C: GROUNDLESS broaden on walker-walk (reward-free vs reward, 2 seeds)
 owns:     whole repo (single session)
@@ -13,8 +13,9 @@ verdict:  After R18-R24, capability ADD-ONS (exploration-control, distractor, go
   mainly on 2D cheetah (+ a 3D-degrades boundary). Highest-value remaining = SOLIDIFY/BROADEN it.
 recipe:   GROUNDLESS reward-free = --grounding sigreg --sigreg-coef 0 (auto latent_norm=none raw, rv
   heads detached, pure multi-step consistency — confirmed via r18_run.sh; walker run shows latent=256/none).
-in_flight: R25 walker-walk campaign (scripts/r25_groundless_broaden.sh, 4 runs ~2h): rewardfree vs reward
-  x seeds 0,1. log runs/R25_walker_campaign.log. First decisive new task for the broaden claim.
+in_flight: R25 walker-walk campaign RELAUNCHED 06-23 (prior run died at step 4000 when driver exited
+  06-21; no results). scripts/r25_groundless_broaden.sh, 4 runs ~2h: rewardfree vs reward x seeds 0,1.
+  log runs/R25_walker_campaign.log. First decisive new task for the GROUNDLESS-broaden claim.
 blocked:  none
 next:     When walker done (waiter): compare rewardfree vs reward final_return cross-seed + eyes-on a
   rollout. IF reward-free competitive (within ~variance of reward-grounded) on walker => strong broaden
